@@ -48,6 +48,10 @@ type SignalMessage struct {
 	Candidate  string      `json:"candidate,omitempty"`
 	Preconnect bool        `json:"preconnect,omitempty"`
 	Token      []ICEServer `json:"token"`
+	// Log and TCPToken are cloud-issued and opaque to us; the app always sends
+	// them, so they are passed through verbatim rather than modelled.
+	Log      json.RawMessage `json:"log,omitempty"`
+	TCPToken json.RawMessage `json:"tcp_token,omitempty"`
 }
 
 // SignalFrame is a complete 302 body.
@@ -66,6 +70,11 @@ type Offer struct {
 	AESKey    string // 16 ASCII characters, sent hex-encoded in the SDP
 	ICEUfrag  string
 	ICEPwd    string
+	// ICEServers is what the monitor calls the token. It gathers no candidates
+	// at all when this is empty.
+	ICEServers []ICEServer
+	Log        json.RawMessage
+	TCPToken   json.RawMessage
 }
 
 // NewOffer mints the identifiers a fresh session needs.
@@ -81,14 +90,15 @@ func NewOffer(uid, deviceID, iceUfrag, icePwd string) (*Offer, error) {
 	now := time.Now().Unix()
 	trace := strings.ToUpper(uuid.NewString())
 	return &Offer{
-		UID:       uid,
-		DeviceID:  deviceID,
-		SessionID: fmt.Sprintf("%s%d%s", deviceID, now, suffix),
-		TraceID:   fmt.Sprintf("%s_%s_%d", trace, deviceID, now*1000),
-		IV:        IVFromTraceID(trace),
-		AESKey:    key,
-		ICEUfrag:  iceUfrag,
-		ICEPwd:    icePwd,
+		UID:        uid,
+		DeviceID:   deviceID,
+		SessionID:  fmt.Sprintf("%s%d%s", deviceID, now, suffix),
+		TraceID:    fmt.Sprintf("%s_%s_%d", trace, deviceID, now*1000),
+		IV:         IVFromTraceID(trace),
+		AESKey:     key,
+		ICEUfrag:   iceUfrag,
+		ICEPwd:     icePwd,
+		ICEServers: placeholderICEServers(),
 	}, nil
 }
 
@@ -160,7 +170,9 @@ func (o *Offer) SendOffer(s *Session) error {
 		Msg: SignalMessage{
 			SDP:        o.SDP(),
 			Preconnect: true,
-			Token:      placeholderICEServers(),
+			Token:      o.ICEServers,
+			Log:        o.Log,
+			TCPToken:   o.TCPToken,
 		},
 	})
 }

@@ -125,8 +125,9 @@ func Pack6699(key, iv []byte, seq, cmd uint32, payload []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// length = iv + ciphertext + tag + suffix
-	length := uint32(gcmIVLen + len(payload) + gcmTagLen + suffixLen)
+	// The length field covers the iv, the ciphertext and the tag, but not the
+	// suffix that follows it — ParseHeader adds that back.
+	length := uint32(gcmIVLen + len(payload) + gcmTagLen)
 	head := make([]byte, header6699Len)
 	binary.BigEndian.PutUint32(head[0:4], Prefix6699)
 	binary.BigEndian.PutUint16(head[4:6], 0)
