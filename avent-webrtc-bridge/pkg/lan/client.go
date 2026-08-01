@@ -34,7 +34,7 @@ type Client struct {
 	router  *packetRouter
 	// stream carries control messages, media the video.
 	stream *kcp.UDPSession
-	media  *kcp.UDPSession
+	media  []*kcp.UDPSession
 
 	mu      sync.Mutex
 	closed  bool
@@ -122,18 +122,46 @@ func (c *Client) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	media, err := newKCP(router, convMedia, peer)
-	if err != nil {
-		return err
-	}
 	c.stream = control
-	c.media = media
 	if err := c.login(aesKey); err != nil {
 		return err
 	}
-	go c.readLoop(ctx, aesKey)
+	go c.attachMedia(ctx, peer, aesKey)
 	go c.keepAlive(ctx)
 	return nil
+}
+
+// attachMedia starts a reader for each conversation the monitor opens.
+//
+// Which id carries the video is not fixed: it has been seen as 1 and as 2 on
+// the same camera, so the session follows whatever arrives.
+func (c *Client) attachMedia(ctx context.Context, peer *net.UDPAddr, aesKey []byte) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case conv := <-c.router.opened:
+			if conv == convControl {
+				continue
+			}
+			stream, err := newKCP(c.router, conv, peer)
+			if err != nil {
+				debugf("lan: conversation %d could not be opened: %v", conv, err)
+				continue
+			}
+			c.mu.Lock()
+			closed := c.closed
+			if !closed {
+				c.media = append(c.media, stream)
+			}
+			c.mu.Unlock()
+			if closed {
+				stream.Close()
+				return
+			}
+			go c.readLoop(ctx, stream, aesKey)
+		}
+	}
 }
 
 // collectAnswer waits for the monitor's answer and its first host candidate.
@@ -185,16 +213,16 @@ func (c *Client) login(aesKey []byte) error {
 	return nil
 }
 
-func (c *Client) readLoop(ctx context.Context, aesKey []byte) {
+func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []byte) {
 	buf := make([]byte, 65535)
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := c.media.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		if err := stream.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			return
 		}
-		n, err := c.media.Read(buf)
+		n, err := stream.Read(buf)
 		if err != nil {
 			debugf("kcp: read ended: %v", err)
 			return
@@ -240,8 +268,8 @@ func (c *Client) Close() error {
 	if c.stream != nil {
 		c.stream.Close()
 	}
-	if c.media != nil {
-		c.media.Close()
+	for _, m := range c.media {
+		m.Close()
 	}
 	if c.sock != nil {
 		c.sock.Close()

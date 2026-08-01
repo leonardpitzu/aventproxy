@@ -198,17 +198,20 @@ type packetRouter struct {
 
 	mu    sync.Mutex
 	conns map[uint32]*convConn
-	done  chan struct{}
+	// opened announces a conversation the monitor started.
+	opened chan uint32
+	done   chan struct{}
 }
 
 func newPacketRouter(sock *net.UDPConn, peer *net.UDPAddr, key []byte, local iceCreds) *packetRouter {
 	r := &packetRouter{
-		sock:  sock,
-		peer:  peer,
-		key:   key,
-		local: local,
-		conns: map[uint32]*convConn{},
-		done:  make(chan struct{}),
+		sock:   sock,
+		peer:   peer,
+		key:    key,
+		local:  local,
+		conns:  map[uint32]*convConn{},
+		opened: make(chan uint32, 8),
+		done:   make(chan struct{}),
 	}
 	go r.run()
 	return r
@@ -252,22 +255,34 @@ func (r *packetRouter) run() {
 			continue
 		}
 		if Debugf != nil && len(body) >= kcpHeaderLen {
-			debugf("seg: conv=%d cmd=%d sn=%d len=%d",
-				binary.LittleEndian.Uint32(body[0:4]), body[4],
-				binary.LittleEndian.Uint32(body[12:16]), len(body))
+			conv := binary.LittleEndian.Uint32(body[0:4])
+			r.mu.Lock()
+			_, known := r.conns[conv]
+			r.mu.Unlock()
+			if !known {
+				debugf("lan: monitor opened conversation %d", conv)
+			}
 		}
 		conv := binary.LittleEndian.Uint32(body[:4])
 		r.mu.Lock()
-		c := r.conns[conv]
+		c, known := r.conns[conv]
+		if !known {
+			c = &convConn{router: r, in: make(chan []byte, 1024)}
+			r.conns[conv] = c
+		}
 		r.mu.Unlock()
-		if c == nil {
-			debugf("media: no session for conv %d", conv)
-			continue
+		if !known {
+			// The monitor chooses the media conversation id per session, so the
+			// session is attached when the first segment for it arrives.
+			select {
+			case r.opened <- conv:
+			default:
+			}
 		}
 		select {
 		case c.in <- append([]byte{}, body...):
 		default:
-			debugf("media: conv %d queue full, dropping a segment", conv)
+			debugf("lan: conversation %d queue full, dropping a segment", conv)
 		}
 	}
 }
@@ -316,11 +331,9 @@ func (c *convConn) SetDeadline(t time.Time) error {
 func (c *convConn) SetReadDeadline(t time.Time) error { return c.SetDeadline(t) }
 func (c *convConn) SetWriteDeadline(time.Time) error  { return nil }
 
-// Conversation ids the monitor uses.
-const (
-	convControl = 0
-	convMedia   = 1
-)
+// convControl is the conversation the monitor answers control messages on;
+// the media conversation id varies per session.
+const convControl = 0
 
 // newKCP starts one conversation on the shared socket.
 func newKCP(r *packetRouter, conv uint32, peer *net.UDPAddr) (*kcp.UDPSession, error) {
