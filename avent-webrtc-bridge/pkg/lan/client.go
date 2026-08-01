@@ -2,7 +2,6 @@ package lan
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -224,16 +223,11 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		}
 		n, err := stream.Read(buf)
 		if err != nil {
-			debugf("kcp: read ended: %v", err)
 			return
 		}
 		msg, err := open(aesKey, buf[:n])
 		if err != nil {
-			debugf("kcp: undecryptable %d-byte message", n)
 			continue
-		}
-		if Debugf != nil {
-			debugf("kcp: message cmd=%#x len=%d", binary.LittleEndian.Uint32(msg[4:8]), len(msg))
 		}
 		if frame, ok := parseMedia(msg); ok && c.onFrame != nil {
 			c.onFrame(frame)
