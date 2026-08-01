@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"avent-webrtc-bridge/pkg/core"
@@ -13,7 +14,6 @@ import (
 	"avent-webrtc-bridge/pkg/storage"
 
 	"github.com/pion/rtp"
-	"github.com/pion/rtp/codecs"
 )
 
 // h264ClockRate is the RTP timestamp rate H.264 always uses.
@@ -28,10 +28,11 @@ type LANBridge struct {
 	camera    *storage.CameraInfo
 	forwarder *RTPForwarder
 
-	client     *lan.Client
-	packetizer rtp.Packetizer
-	ctx        context.Context
-	cancel     context.CancelFunc
+	client *lan.Client
+	ssrc   uint32
+	seq    atomic.Uint32
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mu        sync.Mutex
 	connected bool
@@ -67,14 +68,7 @@ func (lb *LANBridge) Start() error {
 
 	// A fresh SSRC per session keeps a reconnect from looking like a
 	// continuation of the previous stream to RTSP clients.
-	lb.packetizer = rtp.NewPacketizer(
-		1200,
-		96,
-		randomSSRC(),
-		&codecs.H264Payloader{},
-		rtp.NewRandomSequencer(),
-		h264ClockRate,
-	)
+	lb.ssrc = randomSSRC()
 
 	lb.ctx, lb.cancel = context.WithCancel(context.Background())
 	lb.client = lan.NewClient(
@@ -98,15 +92,40 @@ func (lb *LANBridge) Start() error {
 	return nil
 }
 
-// onFrame packetises one NAL and hands it to the shared forwarder.
+// onFrame hands one of the monitor's RTP payloads to the shared forwarder.
+//
+// The monitor already emits RTP payloads rather than raw NALs: parameter sets
+// arrive whole and slices arrive as FU-A fragments, so they only need a header.
+// Packetising them again would wrap one encapsulation in another and produce a
+// stream that flows but decodes to nothing.
 func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
-	if frame == nil || len(frame.NAL) == 0 {
+	if frame == nil || len(frame.NAL) < 2 {
 		return
 	}
-	// The monitor sends a 64-bit microsecond clock; RTP wants 90 kHz samples.
-	samples := uint32(h264ClockRate / maxInt(frame.FPS, 1))
-	for _, pkt := range lb.packetizer.Packetize(frame.NAL, samples) {
-		lb.forwarder.ForwardVideoPacket(pkt)
+	lb.forwarder.ForwardVideoPacket(&rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    96,
+			SequenceNumber: uint16(lb.seq.Add(1)),
+			// The monitor's clock is microseconds; RTP wants 90 kHz ticks.
+			Timestamp: uint32(frame.Timestamp * 9 / 100),
+			SSRC:      lb.ssrc,
+			Marker:    endsAccessUnit(frame.NAL),
+		},
+		Payload: frame.NAL,
+	})
+}
+
+// endsAccessUnit reports whether a payload completes a picture, which is what
+// the RTP marker bit means for H.264.
+func endsAccessUnit(payload []byte) bool {
+	switch payload[0] & 0x1f {
+	case 28, 29: // FU-A / FU-B: the end bit lives in the fragmentation header
+		return payload[1]&0x40 != 0
+	case 1, 5: // a whole slice, coded or IDR
+		return true
+	default: // parameter sets and SEI precede the picture they describe
+		return false
 	}
 }
 
@@ -132,13 +151,6 @@ func (lb *LANBridge) IsConnected() bool {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	return lb.connected
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func randomSSRC() uint32 {

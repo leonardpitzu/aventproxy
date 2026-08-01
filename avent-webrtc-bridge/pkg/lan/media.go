@@ -155,7 +155,8 @@ type VideoFrame struct {
 	Height    int
 	FPS       int
 	Timestamp uint64
-	// NAL is a raw H.264 unit with no start code; the caller adds framing.
+	// NAL is an RTP payload, not a bare NAL: parameter sets arrive whole and
+	// slices arrive already fragmented as FU-A.
 	NAL []byte
 }
 
