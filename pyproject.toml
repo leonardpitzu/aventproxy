@@ -1,9 +1,3 @@
-[project]
-name = "philips-avent-ha"
-version = "0.1.0"
-description = "Home Assistant integration for Philips Avent Baby Monitor"
-requires-python = ">=3.11"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
@@ -29,7 +23,6 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Development scripts: reverse-engineering aids, run by hand, not shipped to
-# users. Broad excepts and asserts are the point in a probe script.
+# Reverse-engineering aids, run by hand and not shipped to users. Broad
+# excepts are the point in a probe script.
 "tools/*" = ["BLE001", "S110", "SIM105", "PLW0603"]
-"examples/*" = ["BLE001"]

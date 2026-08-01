@@ -27,7 +27,7 @@ jobs:
           python-version: "3.13"
       - run: pip install ruff
       - name: Check for errors
-        run: ruff check custom_components/ examples/ tools/ --ignore E501
+        run: ruff check custom_components/ tools/ --ignore E501
 
   tests:
     name: Tests

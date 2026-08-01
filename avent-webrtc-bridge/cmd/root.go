@@ -8,6 +8,7 @@ import (
 	"avent-webrtc-bridge/cmd/auth"
 	"avent-webrtc-bridge/cmd/cameras"
 	"avent-webrtc-bridge/cmd/direct"
+	lancmd "avent-webrtc-bridge/cmd/lan"
 	"avent-webrtc-bridge/cmd/rtsp"
 	"avent-webrtc-bridge/pkg/storage"
 
@@ -49,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(rtsp.NewRTSPCmd())
 	rootCmd.AddCommand(direct.NewDirectCmd())
 	rootCmd.AddCommand(addon.NewAddonCmd())
+	rootCmd.AddCommand(lancmd.NewLanCmd())
 }
 
 func initConfig() {
@@ -65,6 +67,7 @@ func initConfig() {
 	rtsp.SetStorageManager(storageManager)
 	direct.SetStorageManager(storageManager)
 	addon.SetStorageManager(storageManager)
+	lancmd.SetStorageManager(storageManager)
 }
 
 func GetStorageManager() *storage.StorageManager {
