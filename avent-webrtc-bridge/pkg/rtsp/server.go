@@ -578,6 +578,8 @@ func (cs *CameraStream) tryLAN() bool {
 	}
 	bridge := NewLANBridge(cs.camera, cs.webrtcBridge.rtpForwarder)
 	if !bridge.Possible() {
+		// Silence here reads as "no LAN support" when it means "no stored key".
+		core.Logger.Info().Msgf("No LAN credentials stored for %s, using the cloud", cs.camera.DeviceName)
 		return false
 	}
 	if err := bridge.Start(); err != nil {
