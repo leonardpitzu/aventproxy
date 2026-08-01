@@ -1,6 +1,6 @@
 name: "Philips Avent WebRTC Bridge"
 description: "Streams Philips Avent baby monitors over RTSP, from the local network where possible and the cloud otherwise."
-version: "2026.8.1"
+version: "2026.8.2"
 slug: "aventproxy_bridge"
 image: "ghcr.io/leonardpitzu/aventproxy-bridge"
 url: "https://github.com/leonardpitzu/aventproxy"

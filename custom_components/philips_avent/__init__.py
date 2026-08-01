@@ -75,6 +75,20 @@ def _persist_lan_secrets(hass: HomeAssistant, entry: ConfigEntry, cameras: list)
         _LOGGER.info("Stored LAN credentials for %d camera(s)", len(updated))
 
 
+async def _lan_password(api: PhilipsAventAPI, cam_id: str) -> str:
+    """The monitor's P2P login secret.
+
+    Only the RTC config carries it; the device object has no password field at
+    all, so this is a second call and not a spare copy of the first.
+    """
+    try:
+        config = await api.get_rtc_config(cam_id)
+    except Exception as err:  # noqa: BLE001 - no RTC config just means no LAN path
+        _LOGGER.debug("No RTC config for %s, LAN streaming stays off: %s", cam_id, err)
+        return ""
+    return config.get("password") or ""
+
+
 async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cameras: list) -> None:
     """Write bridge config JSON for the add-on."""
     bridge_port = entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT)
@@ -241,10 +255,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if local_key:
                 coordinator._local_key = local_key
 
-        # The first poll already carries both LAN secrets, so keep them on the
-        # camera dict for the bridge config rather than paying a second call.
+        # The first poll already carries the local key, so keep it on the camera
+        # dict for the bridge config rather than paying a second call.
         cam["localKey"] = local_key or ""
-        cam["password"] = cam.get("password") or coordinator.device_info.get("password", "")
+        if not cam.get("password"):
+            cam["password"] = await _lan_password(api, cam_id)
 
         await coordinator.start_lan()
         coordinators[cam_id] = coordinator

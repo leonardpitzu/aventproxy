@@ -46,16 +46,18 @@ var startupMessages = []string{
 
 // LoginToken is the credential the monitor's P2P layer expects.
 //
-// Recovered from the SDK: md5(devicePassword + "||" + localKey). Both halves
-// come from one cloud device lookup, so a deployment only needs that once.
+// md5(devicePassword + "||" + localKey). The password comes from the RTC
+// config and the local key from the device object, so a deployment needs both
+// cloud lookups once and neither of them again.
 func LoginToken(devicePassword, localKey string) string {
 	sum := md5.Sum([]byte(devicePassword + "||" + localKey))
 	return hex.EncodeToString(sum[:])
 }
 
-// buildLogin renders the cmd-1 message: fixed 32-byte username and token fields.
+// buildLogin renders the cmd-1 message: fixed 32-byte username and token
+// fields, then 32 reserved bytes the monitor expects but never populates.
 func buildLogin(token string) []byte {
-	msg := make([]byte, 8+32+32)
+	msg := make([]byte, 8+32+32+32)
 	binary.LittleEndian.PutUint32(msg[0:4], mediaMagic)
 	binary.LittleEndian.PutUint32(msg[4:8], 1)
 	copy(msg[8:40], "admin")
