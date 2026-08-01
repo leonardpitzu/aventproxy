@@ -179,6 +179,12 @@ The integration speaks the same Tuya Mobile SDK API as the official app, includi
 
 ## Camera data points
 
+DPS are Tuya's mechanism for device control. Each data point has an ID, a code name,
+a type, and read/write permissions. Values are read via `tuya.m.device.get` and
+written via `tuya.m.device.dp.publish`.
+
+The ones this integration exposes as entities:
+
 | DPS | Code | Description | Values |
 |---|---|---|---|
 | 134 | `motion_switch` | Motion alert | on/off |
@@ -190,10 +196,6 @@ The integration speaks the same Tuya Mobile SDK API as the official app, includi
 | 209 | `play_volume` | Volume | 1-100 |
 | 212 | `alarm_message` | Alarm record (motion/sound event) | base64 JSON |
 | 237 | `privacy_switch` | Privacy mode | 0/1 |
-
-DPS are Tuya's mechanism for device control. Each data point has an ID, a code name,
-a type, and read/write permissions. Values are read via `tuya.m.device.get` and
-written via `tuya.m.device.dp.publish`.
 
 ### Reading DPS
 
@@ -211,7 +213,7 @@ client.set_dps("YOUR_DEVICE_ID", {"158": 50})      # brightness 50%
 client.set_dps("YOUR_DEVICE_ID", {"201": "play"})   # play lullaby
 ```
 
-### Complete DPS Map
+### Complete DPS map
 
 #### Video & Image
 
@@ -353,7 +355,7 @@ client.set_dps(cam_id, {
 #### Enable talkback (two-way audio)
 ```python
 client.set_dps(cam_id, {"253": "1"})  # app talking on
-## Audio is sent via WebRTC data channel (backchannel)
+# audio rides the WebRTC data channel (backchannel)
 ```
 
 #### Privacy mode (camera off, audio only)
@@ -398,9 +400,9 @@ the cloud API by hand.
 
 How the monitor's API and local protocol were reverse engineered, kept as a narrative so the dead ends stay visible alongside the results.
 
-### 1. Executive Summary
+### 1. Summary
 
-This paper documents the complete reverse engineering of the Tuya Mobile SDK API authentication mechanism, enabling autonomous programmatic access to Tuya whitelabel cameras without dependency on the vendor's mobile application or cloud portal.
+How the Tuya Mobile SDK's authentication was reverse engineered, which is what makes it possible to reach these cameras without the vendor's app or web portal.
 
 **Key findings:**
 
@@ -410,11 +412,11 @@ This paper documents the complete reverse engineering of the Tuya Mobile SDK API
 - The signing key is **static per APK version** - extract once, use indefinitely
 - The SID is the only rotating credential, renewable via the password + MFA flow
 - All WebRTC/MQTT/RTSP bridge logic is protocol-level and API-agnostic
-- **Local signaling needs no cloud credential at all** (section 16, captured by @leonardpitzu): the
+- **Local signaling needs no cloud credential at all**: the
   camera negotiates a stream over its own TCP 6668 session, with the `localKey` as the only
   cloud-derived secret and `smartlife.m.rtc.config.get` not required
 
-**Result:** Full autonomous API access from Python/Go, suitable for Home Assistant integration with a config flow identical to the vendor app's login (email -> password -> MFA code from email).
+**Result:** full API access from Python and Go, with a config flow identical to the app's own login: email, password, then the MFA code from email.
 
 ---
 
@@ -1266,7 +1268,6 @@ Baby Monitor (LAN, 192.168.85.x)
 
 ### 14. Phase 8: Streaming Path - WebRTC Signaling and Media
 
-*This phase was contributed by @leonardpitzu in [issue #51](https://github.com/thekoma/aventproxy/issues/51), from work on the sibling `aventlocal` project. The findings are reproduced here with light edits: section cross-references renumbered, and one note added where the capture and this project's working bridge disagree.*
 
 Authentication (sections 6 to 8) yields API access; this phase documents how the **video itself** is obtained. The camera streams over **WebRTC**, negotiated in two independent phases:
 
@@ -1340,7 +1341,6 @@ The cloud-vs-LAN selector inside the SDK is the integer **`lan_mode`** flag on `
 
 ### 16. Phase 10: The Local-Signaling Path (Zero-WAN)
 
-*Captured live and contributed by @leonardpitzu in [issue #51](https://github.com/thekoma/aventproxy/issues/51). This section previously described a static, partly wrong reconstruction; the capture replaces it and the corrections are called out below so the earlier reasoning stays traceable.*
 
 The official app keeps streaming with the camera's WAN unplugged. The capture that settles how: camera blocked from WAN at the gateway, app streaming throughout, traffic taken **on the access point the camera associates with** and decrypted offline with the device `localKey`.
 
@@ -1459,21 +1459,21 @@ points at Tuya's push-notification service. That has not been reverse engineered
 With the streaming path mapped, the end-to-end local pipeline is:
 
 ```
-cloud login + smartlife.m.rtc.config.get   (one-time; motoId, auth, ICE servers, MQTT creds)
+cloud lookup, once at setup   (localKey, P2P password, uid; cached in the config entry)
         |
         v
-pluggable signaling transport
-   +- CloudMqttSignaling   offer/answer over Tuya MQTT           implemented
-   +- LanSignaling         offer/answer over the SDK LAN socket   pending the section 16 capture
+signalling transport
+   +- LanSignaling         offer/answer over TCP 6668            preferred
+   +- CloudMqttSignaling   offer/answer over Tuya MQTT           fallback
         |
         v
-aiortc PeerConnection (DTLS-SRTP, H.264)  <- direct-LAN host ICE pair, media stays local
+LAN: ICE host pair, then KCP with AES-CBC     cloud: WebRTC DTLS-SRTP
         |
         v
-RTSP re-publish (ffmpeg/go2rtc)  ->  Home Assistant / VLC
+RTSP re-publish  ->  Home Assistant
 ```
 
-The reference implementation lives in the sibling `aventlocal` project; its `SignalingTransport` ABC is the seam that lets `LanSignaling` slot in behind the same interface once the section 16 capture is done, with the media->RTSP pipeline unchanged. Because login + `rtc.config.get` is the *only* remaining cloud touch, caching that config (or serving it locally) removes even that step - yielding true zero-internet operation.
+Both transports are implemented and share the RTP forwarder, so everything downstream of signalling is the same code. The remaining cloud touch is the one-time credential lookup, and because those credentials are cached in the config entry, a monitor that has reached the cloud since booting streams with the WAN unplugged.
 
 ---
 
@@ -1502,7 +1502,6 @@ This research targets personal devices owned by the researcher. No third-party s
 
 #### Decrypting a local session from a packet capture
 
-*Contributed by @leonardpitzu in [issue #51](https://github.com/thekoma/aventproxy/issues/51). Each of these cost real time, so they are written down rather than rediscovered.*
 
 - **Capture on the access point, not on a neighbouring host.** The AP bridges station-to-station traffic locally, so phone-to-camera frames never reach a third party on the same subnet.
 - **`tinytuya.parse_header` rejects frames larger than `MAX_PAYLOAD_LENGTH`.** The offer is 1633 bytes and trips it, so a naive frame walker silently skips the single most interesting frame and the sequence numbers merely appear to jump from 3 to 5. Pass `header=` into `unpack_message` as well, which otherwise re-parses and re-applies the same ceiling.
