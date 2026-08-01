@@ -127,7 +127,7 @@ def note_unmapped_command(command: str) -> None:
     _seen_unknown_commands.add(command)
     _LOGGER.warning(
         "Monitor reported alarm command '%s', which no motion or sound sensor maps to yet. "
-        "Please report it at https://github.com/thekoma/aventproxy/issues so it can be added",
+        "Please report it at https://github.com/leonardpitzu/aventproxy/issues so it can be added",
         command,
     )
 

@@ -1,12 +1,12 @@
 {
   "domain": "philips_avent",
   "name": "Philips Avent Baby Monitor",
-  "codeowners": ["@thekoma"],
+  "codeowners": ["@leonardpitzu"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/thekoma/aventproxy",
+  "documentation": "https://github.com/leonardpitzu/aventproxy",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/thekoma/aventproxy/issues",
+  "issue_tracker": "https://github.com/leonardpitzu/aventproxy/issues",
   "requirements": ["pycryptodome>=3.20.0", "tinytuya>=1.15.0"],
   "version": "2026.8.0"
 }

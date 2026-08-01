@@ -67,8 +67,8 @@ Home Assistant automatically prompts you to download a `home-assistant_philips_a
 
 ## Step 3 — attach the files to a GitHub issue
 
-1. Go to [https://github.com/thekoma/aventproxy/issues](https://github.com/thekoma/aventproxy/issues).
-2. Either comment on the existing issue you're contributing to (e.g. [#40](https://github.com/thekoma/aventproxy/issues/40) for SCD921 problems) **or** open a new one with the **Bug report** template.
+1. Go to [https://github.com/leonardpitzu/aventproxy/issues](https://github.com/leonardpitzu/aventproxy/issues).
+2. Either comment on the existing issue you're contributing to (e.g. [#40](https://github.com/leonardpitzu/aventproxy/issues/40) for SCD921 problems) **or** open a new one with the **Bug report** template.
 3. Drag-and-drop the diagnostics JSON file (and the log file if you captured one) into the comment box. GitHub uploads them as attachments and shows a link.
 4. Add a one-sentence description: "I expected X, I got Y, and here's the dump."
 

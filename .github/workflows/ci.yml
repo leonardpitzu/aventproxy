@@ -2,82 +2,109 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+    paths-ignore: ["**.md", ".gitignore", "LICENSE"]
   pull_request:
-    branches: [main]
+    paths-ignore: ["**.md", ".gitignore", "LICENSE"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test-python:
+  ruff:
+    name: Lint (Ruff)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
+      - run: pip install ruff
+      - name: Check for errors
+        run: ruff check custom_components/ examples/ tools/ --ignore E501
 
-      - name: Install dependencies
-        run: pip install pytest pycryptodome aiohttp voluptuous
-
-      - name: Lint
-        run: |
-          pip install ruff
-          ruff check custom_components/ examples/ tools/ --ignore E501
-
-      - name: Test
-        run: PYTHONPATH=. pytest -v --tb=short tests/test_philips_avent/
-
-  test-go:
+  tests:
+    name: Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install test dependencies
+        run: pip install pytest pycryptodome aiohttp voluptuous
+      - name: Run tests
+        run: PYTHONPATH=. pytest tests/test_philips_avent/ -v --tb=short
 
+  bridge:
+    name: Bridge (Go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: avent-webrtc-bridge
+    steps:
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
-
       - name: Check formatting
-        working-directory: avent-webrtc-bridge
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "gofmt would rewrite these files:"
             echo "$unformatted"
-            echo "Run: docker run --rm -v \$PWD:/src -w /src golang:1.26-bookworm gofmt -w ."
             exit 1
           fi
-
-      - name: Build bridge
-        working-directory: avent-webrtc-bridge
+      - name: Build
         run: go build -o avent-webrtc-bridge .
-
       - name: Test
-        working-directory: avent-webrtc-bridge
         run: go test ./...
-
       - name: Verify binary
-        working-directory: avent-webrtc-bridge
         run: ./avent-webrtc-bridge --help
 
-  docker-addon:
+  addon:
+    name: Add-on image
     runs-on: ubuntu-latest
-    needs: [test-python, test-go]
+    timeout-minutes: 20
+    needs: [tests, bridge]
     steps:
       - uses: actions/checkout@v7
-
-      - name: Copy bridge source for Docker build
+      # The Supervisor builds with the add-on folder as context, so the bridge
+      # source has to sit inside it.
+      - name: Stage bridge source
         run: cp -r avent-webrtc-bridge aventproxy-bridge-addon/avent-webrtc-bridge
-
-      - name: Build add-on Docker image
+      - name: Build
         run: |
           docker build \
             --build-arg BUILD_FROM=debian:bookworm-slim \
             -t aventproxy-bridge:test \
             aventproxy-bridge-addon/
-
       - name: Verify binary in container
-        run: |
-          docker run --rm aventproxy-bridge:test avent-webrtc-bridge --help
+        run: docker run --rm aventproxy-bridge:test avent-webrtc-bridge --help
+
+  hacs:
+    name: HACS Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
+
+  hassfest:
+    name: Hassfest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: home-assistant/actions/hassfest@master

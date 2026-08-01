@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. To triage this efficiently I need a **diagnostics dump** from your Home Assistant. It's three clicks in the HA UI, and credentials are auto-redacted before download — see [`docs/reporting-issues.md`](https://github.com/thekoma/aventproxy/blob/main/docs/reporting-issues.md) for the full walkthrough.
+        Thanks for the report. To triage this efficiently I need a **diagnostics dump** from your Home Assistant. It's three clicks in the HA UI, and credentials are auto-redacted before download — see [`docs/reporting-issues.md`](https://github.com/leonardpitzu/aventproxy/blob/main/docs/reporting-issues.md) for the full walkthrough.
 
         Without that dump, I usually can't tell what's actually happening on your device.
 
@@ -16,7 +16,7 @@ body:
     attributes:
       label: Confirmation
       options:
-        - label: I've read the [reporting guide](https://github.com/thekoma/aventproxy/blob/main/docs/reporting-issues.md) and I'm attaching the diagnostics dump below.
+        - label: I've read the [reporting guide](https://github.com/leonardpitzu/aventproxy/blob/main/docs/reporting-issues.md) and I'm attaching the diagnostics dump below.
           required: true
 
   - type: dropdown
@@ -109,7 +109,7 @@ body:
     attributes:
       label: Debug log (optional, very helpful for event-based bugs)
       description: |
-        If the bug is something that should happen at a specific moment (motion, sound, button press), capture a short debug log following step 2 of the [reporting guide](https://github.com/thekoma/aventproxy/blob/main/docs/reporting-issues.md#step-2--capture-a-short-debug-log) and attach it here.
+        If the bug is something that should happen at a specific moment (motion, sound, button press), capture a short debug log following step 2 of the [reporting guide](https://github.com/leonardpitzu/aventproxy/blob/main/docs/reporting-issues.md#step-2--capture-a-short-debug-log) and attach it here.
       placeholder: |
         Drop the home-assistant_philips_avent_…log file here.
 
