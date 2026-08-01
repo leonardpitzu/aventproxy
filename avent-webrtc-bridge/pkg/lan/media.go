@@ -22,7 +22,6 @@ const (
 	mediaMagic = 0x12345678
 
 	CmdMediaVideo = 0x00010003
-	CmdMediaAudio = 0x00010005
 
 	macLen         = sha1.Size // trailing HMAC on every datagram
 	mediaHeaderLen = 32        // command + stream description

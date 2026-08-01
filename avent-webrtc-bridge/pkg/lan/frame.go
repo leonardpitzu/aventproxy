@@ -13,7 +13,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash/crc32"
 )
 
 // Frame prefixes. 55AA is the classic format used up to protocol 3.3; 6699
@@ -21,7 +20,6 @@ import (
 const (
 	Prefix55AA = 0x000055AA
 	Prefix6699 = 0x00006699
-	Suffix55AA = 0x0000AA55
 	Suffix6699 = 0x00009966
 
 	header55AALen = 16
@@ -41,10 +39,7 @@ const (
 	CmdSessKeyNegStart  = 3
 	CmdSessKeyNegResp   = 4
 	CmdSessKeyNegFinish = 5
-	CmdStatus           = 8
 	CmdHeartbeat        = 9
-	CmdDPQuery          = 10
-	CmdDPQueryNew       = 16
 	// CmdIPCLan302 carries the WebRTC-style offer/answer exchange, the same
 	// protocol-302 body the app publishes over cloud MQTT.
 	CmdIPCLan302 = 32
@@ -174,19 +169,6 @@ func Unpack6699(key, frame []byte) (Header, []byte, error) {
 		return h, nil, fmt.Errorf("lan: decrypt cmd %d: %w", h.Cmd, err)
 	}
 	return h, plain, nil
-}
-
-// Pack55AA builds a plain CRC-checked frame, used before a session key exists.
-func Pack55AA(seq, cmd uint32, payload []byte) []byte {
-	length := uint32(len(payload) + 8)
-	out := make([]byte, 0, header55AALen+len(payload)+8)
-	out = binary.BigEndian.AppendUint32(out, Prefix55AA)
-	out = binary.BigEndian.AppendUint32(out, seq)
-	out = binary.BigEndian.AppendUint32(out, cmd)
-	out = binary.BigEndian.AppendUint32(out, length)
-	out = append(out, payload...)
-	out = binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(out))
-	return binary.BigEndian.AppendUint32(out, Suffix55AA)
 }
 
 // StripRetcode removes the 4-byte return code that frames from the monitor
