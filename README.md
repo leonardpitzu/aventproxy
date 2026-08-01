@@ -49,10 +49,15 @@ it needs are fetched once at setup and cached in the config entry: `local_key`
 and `uid` from the device lookup, and the P2P `password` from the RTC config -
 the monitor's media login is `md5(password + "||" + local_key)`.
 
-**The monitor must have had internet access when it booted.** It ignores local
-signalling offers entirely until it has established its cloud session once; a
-monitor power-cycled while the WAN is down answers nothing. After that first
-connection the WAN can go away and local streaming keeps working.
+**The monitor must have reached the Tuya cloud at least once since it booted.**
+Until it has, it ignores local signalling offers entirely: the session
+negotiates, DPS queries answer, and protocol-302 frames vanish without a reply.
+What it collects up there has not been captured, but the shape of the failure
+says its P2P subsystem is not running rather than refusing us, since an offer
+carrying a deliberately unreachable ICE server is accepted once the monitor is
+online. Restoring the WAN fixes it within a minute or so with no power cycle,
+and once it has connected the WAN can go away again and local streaming
+continues.
 
 Two details of the monitor's protocol are worth knowing, because both fail
 silently:
