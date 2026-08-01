@@ -9,6 +9,7 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_call_later
 
 from .api import PhilipsAventAPI
 from .const import (
@@ -37,6 +38,10 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.CAMERA, Platform.SENSOR, Platform.SWITCH, Platform.NUMBER, Platform.BUTTON, Platform.SELECT, Platform.BINARY_SENSOR]
 
+# tinytuya's scan retries the broadcast several times before it resolves an
+# address, so the bridge cannot be told about it during setup.
+LAN_ADDRESS_SETTLE = 60
+
 
 def _entry_api_host(entry: ConfigEntry) -> str:
     """API host for this account, falling back to Central Europe.
@@ -62,7 +67,11 @@ def _persist_lan_secrets(hass: HomeAssistant, entry: ConfigEntry, cameras: list)
     for cam in stored:
         merged = dict(cam)
         found = fresh.get(cam.get("id"), {})
-        for stored_key, api_key in (("local_key", "localKey"), ("password", "password")):
+        for stored_key, api_key in (
+            ("local_key", "localKey"),
+            ("password", "password"),
+            ("lan_ip", "lanIp"),
+        ):
             value = found.get(api_key) or ""
             if value and cam.get(stored_key) != value:
                 merged[stored_key] = value
@@ -189,6 +198,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "productId": cam.get("product_id", ""),
                 "localKey": cam.get("local_key", ""),
                 "password": cam.get("password", ""),
+                "lanIp": cam.get("lan_ip", ""),
             }
             for cam in stored_cameras
         )
@@ -262,7 +272,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             cam["password"] = await _lan_password(api, cam_id)
 
         await coordinator.start_lan()
-        cam["lanIp"] = coordinator.lan_ip
         coordinators[cam_id] = coordinator
 
     _persist_lan_secrets(hass, entry, cameras)
@@ -275,6 +284,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await _write_bridge_config(hass, entry, api, cameras)
+
+    async def _publish_lan_addresses(_now) -> None:
+        """Hand the bridge the address the LAN listener resolved.
+
+        tinytuya's scan finishes well after setup, so a fresh entry only learns
+        the address on this second pass. Writing it back to the entry means
+        every later start has it before the first stream is asked for.
+        """
+        changed = False
+        for cam in cameras:
+            coordinator = coordinators.get(cam.get("deviceId"))
+            found = coordinator.lan_ip if coordinator else ""
+            if found and cam.get("lanIp") != found:
+                cam["lanIp"] = found
+                changed = True
+        if changed:
+            _persist_lan_secrets(hass, entry, cameras)
+            await _write_bridge_config(hass, entry, api, cameras)
+
+    entry.async_on_unload(async_call_later(hass, LAN_ADDRESS_SETTLE, _publish_lan_addresses))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
