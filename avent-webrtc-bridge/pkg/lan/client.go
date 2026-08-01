@@ -2,15 +2,17 @@ package lan
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/pion/ice/v4"
 	kcp "github.com/xtaci/kcp-go/v5"
 )
 
@@ -28,8 +30,11 @@ type Client struct {
 	IP string
 
 	session *Session
-	agent   *ice.Agent
-	stream  *kcp.UDPSession
+	sock    *net.UDPConn
+	router  *packetRouter
+	// stream carries control messages, media the video.
+	stream *kcp.UDPSession
+	media  *kcp.UDPSession
 
 	mu      sync.Mutex
 	closed  bool
@@ -70,82 +75,59 @@ func (c *Client) Start(ctx context.Context) error {
 		return err
 	}
 
-	agent, err := ice.NewAgent(&ice.AgentConfig{
-		NetworkTypes: []ice.NetworkType{ice.NetworkTypeUDP4},
-		Lite:         false,
-	})
+	sock, err := net.ListenUDP("udp4", &net.UDPAddr{})
 	if err != nil {
 		return err
 	}
-	c.agent = agent
+	c.sock = sock
 
-	localUfrag, localPwd, err := agent.GetLocalUserCredentials()
+	local, err := newICECreds()
 	if err != nil {
 		return err
 	}
-
-	offer, err := NewOffer(c.UID, c.DeviceID, localUfrag, localPwd)
+	offer, err := NewOffer(c.UID, c.DeviceID, local.Ufrag, local.Pwd)
 	if err != nil {
 		return err
 	}
-
-	candidates := make(chan string, 16)
-	if err := agent.OnCandidate(func(cand ice.Candidate) {
-		if cand == nil {
-			return
-		}
-		select {
-		case candidates <- cand.Marshal():
-		default:
-		}
-	}); err != nil {
-		return err
-	}
-	if err := agent.GatherCandidates(); err != nil {
-		return err
-	}
-
 	if err := offer.SendOffer(c.session); err != nil {
 		return err
 	}
-	go func() {
-		for cand := range candidates {
-			if err := offer.SendCandidate(c.session, cand); err != nil {
-				return
-			}
-		}
-	}()
 
-	remoteUfrag, remotePwd, aesKey, remote, err := c.collectAnswer(offer)
+	hostIP, err := localAddrFor(&net.UDPAddr{IP: net.ParseIP(ip), Port: Port})
 	if err != nil {
 		return err
 	}
+	port := sock.LocalAddr().(*net.UDPAddr).Port
+	if err := offer.SendCandidate(c.session, hostCandidate(hostIP, port)); err != nil {
+		return err
+	}
 
-	for _, cand := range remote {
-		if err := agent.AddRemoteCandidate(cand); err != nil {
-			return err
-		}
+	remote, aesKey, peer, err := c.collectAnswer(offer)
+	if err != nil {
+		return err
 	}
 
 	connCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	iceConn, err := agent.Dial(connCtx, remoteUfrag, remotePwd)
-	if err != nil {
-		return fmt.Errorf("lan: ICE failed: %w", err)
+	if err := iceConnect(connCtx, sock, peer, local, remote); err != nil {
+		return err
 	}
 
-	// kcp carries the application messages; the MAC wrapper sits underneath so
-	// kcp itself never sees the monitor's trailing HMAC.
-	wrapper := &macConn{inner: iceConn, key: aesKey, raddr: iceConn.RemoteAddr()}
-	stream, err := kcp.NewConn3(0, iceConn.RemoteAddr(), nil, 0, 0, wrapper)
+	// The monitor splits control and media across two KCP conversations, so a
+	// router under both sessions sorts the datagrams by conversation id.
+	router := newPacketRouter(sock, peer, aesKey, local)
+	c.router = router
+
+	control, err := newKCP(router, convControl, peer)
 	if err != nil {
 		return err
 	}
-	stream.SetStreamMode(false) // preserve message boundaries
-	stream.SetWindowSize(512, 512)
-	stream.SetNoDelay(1, 10, 2, 1)
-	c.stream = stream
-
+	media, err := newKCP(router, convMedia, peer)
+	if err != nil {
+		return err
+	}
+	c.stream = control
+	c.media = media
 	if err := c.login(aesKey); err != nil {
 		return err
 	}
@@ -154,36 +136,35 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
-// collectAnswer waits for the monitor's answer and its host candidates.
-func (c *Client) collectAnswer(offer *Offer) (ufrag, pwd string, aesKey []byte, remote []ice.Candidate, err error) {
+// collectAnswer waits for the monitor's answer and its first host candidate.
+func (c *Client) collectAnswer(offer *Offer) (remote iceCreds, aesKey []byte, peer *net.UDPAddr, err error) {
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		frame, err := ReadSignal(c.session, time.Until(deadline))
 		if err != nil {
-			return "", "", nil, nil, err
+			return iceCreds{}, nil, nil, err
 		}
 		switch frame.Header.Type {
 		case TypeAnswer:
-			ufrag = sdpAttr(frame.Msg.SDP, "ice-ufrag")
-			pwd = sdpAttr(frame.Msg.SDP, "ice-pwd")
+			remote.Ufrag = sdpAttr(frame.Msg.SDP, "ice-ufrag")
+			remote.Pwd = sdpAttr(frame.Msg.SDP, "ice-pwd")
 			raw, decErr := hex.DecodeString(sdpAttr(frame.Msg.SDP, "aes-key"))
 			if decErr != nil {
-				return "", "", nil, nil, fmt.Errorf("lan: bad aes-key in answer: %w", decErr)
+				return iceCreds{}, nil, nil, fmt.Errorf("lan: bad aes-key in answer: %w", decErr)
 			}
 			aesKey = raw
 		case TypeCandidate:
-			cand, parseErr := parseCandidate(frame.Msg.Candidate)
-			if parseErr == nil {
-				remote = append(remote, cand)
+			if addr, parseErr := parseCandidate(frame.Msg.Candidate); parseErr == nil {
+				peer = addr
 			}
 		case TypeDisconnect:
-			return "", "", nil, nil, errors.New("lan: monitor refused the session")
+			return iceCreds{}, nil, nil, errors.New("lan: monitor refused the session")
 		}
-		if ufrag != "" && len(remote) > 0 {
-			return ufrag, pwd, aesKey, remote, nil
+		if remote.Ufrag != "" && peer != nil {
+			return remote, aesKey, peer, nil
 		}
 	}
-	return "", "", nil, nil, errors.New("lan: monitor never completed the answer")
+	return iceCreds{}, nil, nil, errors.New("lan: monitor never completed the answer")
 }
 
 func (c *Client) login(aesKey []byte) error {
@@ -210,16 +191,21 @@ func (c *Client) readLoop(ctx context.Context, aesKey []byte) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := c.stream.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		if err := c.media.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			return
 		}
-		n, err := c.stream.Read(buf)
+		n, err := c.media.Read(buf)
 		if err != nil {
+			debugf("kcp: read ended: %v", err)
 			return
 		}
 		msg, err := open(aesKey, buf[:n])
 		if err != nil {
+			debugf("kcp: undecryptable %d-byte message", n)
 			continue
+		}
+		if Debugf != nil {
+			debugf("kcp: message cmd=%#x len=%d", binary.LittleEndian.Uint32(msg[4:8]), len(msg))
 		}
 		if frame, ok := parseMedia(msg); ok && c.onFrame != nil {
 			c.onFrame(frame)
@@ -254,8 +240,11 @@ func (c *Client) Close() error {
 	if c.stream != nil {
 		c.stream.Close()
 	}
-	if c.agent != nil {
-		c.agent.Close()
+	if c.media != nil {
+		c.media.Close()
+	}
+	if c.sock != nil {
+		c.sock.Close()
 	}
 	if c.session != nil {
 		return c.session.Close()
@@ -272,10 +261,19 @@ func sdpAttr(sdp, name string) string {
 	return ""
 }
 
-func parseCandidate(line string) (ice.Candidate, error) {
+func parseCandidate(line string) (*net.UDPAddr, error) {
 	line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "a="))
-	if !candidateRE.MatchString(line) {
+	m := candidateRE.FindStringSubmatch(line)
+	if m == nil {
 		return nil, errors.New("lan: unusable candidate")
 	}
-	return ice.UnmarshalCandidate(line)
+	ip := net.ParseIP(m[5])
+	if ip == nil {
+		return nil, errors.New("lan: candidate carries no address")
+	}
+	port, err := strconv.Atoi(m[6])
+	if err != nil {
+		return nil, err
+	}
+	return &net.UDPAddr{IP: ip, Port: port}, nil
 }

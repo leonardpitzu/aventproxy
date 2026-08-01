@@ -39,6 +39,11 @@ type LANBridge struct {
 
 // NewLANBridge prepares a LAN bridge feeding an existing forwarder.
 func NewLANBridge(camera *storage.CameraInfo, forwarder *RTPForwarder) *LANBridge {
+	// The LAN protocol can only be diagnosed against real hardware, so its
+	// tracing follows the bridge's own log level.
+	lan.Debugf = func(format string, args ...any) {
+		core.Logger.Debug().Msgf(format, args...)
+	}
 	return &LANBridge{camera: camera, forwarder: forwarder}
 }
 

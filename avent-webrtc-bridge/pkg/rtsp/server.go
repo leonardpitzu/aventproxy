@@ -587,6 +587,7 @@ func (cs *CameraStream) tryLAN() bool {
 		bridge.Stop()
 		return false
 	}
+	core.Logger.Info().Msgf("Streaming %s over the local network", cs.camera.DeviceName)
 	cs.lanBridge = bridge
 	return true
 }

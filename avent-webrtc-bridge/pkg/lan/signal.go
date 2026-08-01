@@ -157,10 +157,14 @@ func (o *Offer) header(msgType string) SignalHeader {
 
 // placeholderICEServers exists because the monitor gathers no candidates at all
 // when the token list is empty: it answers, then sends an empty candidate and
-// disconnects. The entries are never contacted on a LAN pairing, so a syntactic
-// placeholder is enough.
+// disconnects.
+//
+// The entry is never contacted on a LAN pairing, but it must be an IP literal.
+// A hostname makes the monitor resolve it before gathering anything, so with no
+// DNS it produces the same empty candidate as an empty list. This is TEST-NET-1
+// from RFC 5737: reserved for documentation and never routable.
 func placeholderICEServers() []ICEServer {
-	return []ICEServer{{URLs: "stun:stun.l.google.com:19302"}}
+	return []ICEServer{{URLs: "stun:192.0.2.1:3478"}}
 }
 
 // SendOffer writes the offer to the monitor.

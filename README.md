@@ -32,17 +32,40 @@ Multiple monitors on one account are supported: the bridge serves each camera fr
 
 ### Local streaming
 
-The bridge tries the local network first and only falls back to the cloud if that fails:
+The bridge tries the local network first and falls back to the cloud whenever any
+step fails, so a camera it cannot reach locally still works exactly as before.
 
 | Stage | Transport |
 |---|---|
-| Discovery | UDP broadcast on 6667 |
+| Address | Taken from Home Assistant, which already resolves it; UDP 6667 discovery is the fallback |
 | Session | TCP 6668, protocol 3.5, authenticated with the device `localKey` |
 | Signalling | protocol-302 offer/answer on the same session |
-| Media | ICE, then KCP with AES-128-CBC payloads |
-| Video | H.264 (Main profile), repacketised into RTP for RTSP |
+| Connectivity | ICE host candidates, checked directly rather than through a full ICE agent |
+| Media | KCP over UDP, AES-128-CBC payloads, each datagram carrying an HMAC-SHA1 trailer |
+| Video | H.264, repacketised into RTP for RTSP |
 
-Nothing in that chain contacts the internet. The credentials it needs — `localKey` and the device password — are fetched once during setup and cached in the config entry.
+Once it is up, nothing in that chain touches the internet. The three credentials
+it needs are fetched once at setup and cached in the config entry: `local_key`
+and `uid` from the device lookup, and the P2P `password` from the RTC config —
+the monitor's media login is `md5(password + "||" + local_key)`.
+
+**The monitor must have had internet access when it booted.** It ignores local
+signalling offers entirely until it has established its cloud session once; a
+monitor power-cycled while the WAN is down answers nothing. After that first
+connection the WAN can go away and local streaming keeps working.
+
+Two details of the monitor's protocol are worth knowing, because both fail
+silently:
+
+- Its ICE server list may not be empty, and every entry must be an **IP
+  literal**. Given a hostname it tries to resolve it before gathering anything,
+  so with no DNS it reports no candidates at all and hangs up. The bridge sends
+  a documentation address that is never contacted.
+- It always takes the ICE controlling role and its STUN success responses carry
+  no `MESSAGE-INTEGRITY`. A conformant agent answers 487 Role Conflict or
+  discards the responses, which is why the connectivity checks are done in
+  `pkg/lan` instead of with pion's ICE agent.
+
 
 ## Supported devices
 
