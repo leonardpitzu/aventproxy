@@ -2,7 +2,7 @@
 """Decode a Tuya LAN (:6668) packet capture, with an eye on IPC_LAN_302 signaling.
 
 Contributed by @leonardpitzu in https://github.com/thekoma/aventproxy/issues/51,
-the same work that produced sections 14, 16 and 19 of WHITEPAPER.md.
+the same work behind the "Protocol reference" section of the README.
 
 The camera's local control channel carries more than DPS traffic: when the app
 is on the same LAN it also negotiates the video stream there, as frame type 32

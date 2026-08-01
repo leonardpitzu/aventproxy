@@ -29,6 +29,7 @@ type BridgeConfig struct {
 	DeviceID    string   `json:"device_id"`
 	PackageName string   `json:"package_name"`
 	APIHost     string   `json:"api_host"`
+	UID         string   `json:"uid"`
 	Talkback    bool     `json:"talkback"`
 	BridgePort  int      `json:"bridge_port"`
 	Cameras     []Camera `json:"cameras"`
@@ -39,6 +40,23 @@ type Camera struct {
 	ID        string `json:"camera_id"`
 	Name      string `json:"camera_name"`
 	ProductID string `json:"product_id"`
+	// LocalKey and Password drive the LAN path: the monitor's P2P login is
+	// md5(Password + "||" + LocalKey). Empty for entries written by an older
+	// integration, which simply means cloud-only for that camera.
+	LocalKey string `json:"local_key"`
+	Password string `json:"password"`
+}
+
+// lanUID prefers the account id the integration passed. Falling back to the
+// cloud profile keeps configs written by an older integration working.
+func lanUID(cfg BridgeConfig, userInfo *tuya.UserInfoResult) string {
+	if cfg.UID != "" {
+		return cfg.UID
+	}
+	if userInfo != nil {
+		return userInfo.ID
+	}
+	return ""
 }
 
 func loadConfig(path string) (BridgeConfig, error) {
@@ -223,6 +241,9 @@ func runAddon(cmd *cobra.Command, args []string) error {
 			ProductID:  c.ProductID,
 			RTSPPath:   c.Path,
 			UserKey:    userKey,
+			LocalKey:   c.LocalKey,
+			Password:   c.Password,
+			UID:        lanUID(cfg, userInfo),
 		})
 		pathLog = append(pathLog, c.Path)
 		core.Logger.Info().Msgf("Camera registered: id=%s name=%s path=%s", c.ID, c.Name, c.Path)

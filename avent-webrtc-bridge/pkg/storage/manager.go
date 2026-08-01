@@ -27,6 +27,10 @@ type CameraInfo struct {
 	ProductID  string `json:"productId"`
 	UUID       string `json:"uuid"`
 	Skill      string `json:"skill"`
+	// LocalKey and Password enable the LAN path; empty means cloud-only.
+	LocalKey string `json:"localKey"`
+	Password string `json:"password"`
+	UID      string `json:"uid"`
 }
 
 type CameraRegistry struct {

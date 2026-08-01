@@ -34,6 +34,8 @@ class TestBuildCamerasPayloadShape:
             "camera_id": "abc123",
             "camera_name": "Baby",
             "product_id": "selj2idknqhjnids",
+            "local_key": "",
+            "password": "",
         }
 
     def test_product_id_empty_for_scd973(self):
@@ -121,13 +123,19 @@ class TestBuildBridgeConfig:
         config = build_bridge_config(**self.BASE)
         assert set(config) == {
             "signing_key", "sid", "ecode", "partner", "app_key", "device_id",
-            "package_name", "api_host", "talkback", "bridge_port", "cameras",
+            "package_name", "api_host", "uid", "talkback", "bridge_port", "cameras",
         }
 
     def test_cameras_use_the_shared_payload_builder(self):
         config = build_bridge_config(**self.BASE)
         assert config["cameras"] == [
-            {"camera_id": "abc123", "camera_name": "Erik", "product_id": "p1"},
+            {
+                "camera_id": "abc123",
+                "camera_name": "Erik",
+                "product_id": "p1",
+                "local_key": "",
+                "password": "",
+            },
         ]
 
     def test_config_is_json_serialisable(self):

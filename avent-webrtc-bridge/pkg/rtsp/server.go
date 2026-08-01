@@ -75,6 +75,10 @@ type CameraStream struct {
 	resolution   string
 	user         *storage.UserSession
 	webrtcBridge *WebRTCBridge
+	// lanBridge streams without the cloud when the camera has LAN credentials.
+	// It shares the WebRTC bridge's forwarder so RTSP clients are unaffected by
+	// which path is in use.
+	lanBridge    *LANBridge
 	clients      map[string]*RTSPClient
 	mutex        sync.RWMutex
 	connecting   bool
@@ -567,6 +571,24 @@ func (cs *CameraStream) Stop() {
 	cs.stopStream()
 }
 
+// tryLAN attempts a cloudless local session, reporting whether video started.
+func (cs *CameraStream) tryLAN() bool {
+	if cs.webrtcBridge == nil || cs.webrtcBridge.rtpForwarder == nil {
+		return false
+	}
+	bridge := NewLANBridge(cs.camera, cs.webrtcBridge.rtpForwarder)
+	if !bridge.Possible() {
+		return false
+	}
+	if err := bridge.Start(); err != nil {
+		core.Logger.Info().Err(err).Msgf("LAN path unavailable for %s, using the cloud", cs.camera.DeviceName)
+		bridge.Stop()
+		return false
+	}
+	cs.lanBridge = bridge
+	return true
+}
+
 func (cs *CameraStream) startStream() {
 	cs.mutex.Lock()
 	if cs.active || !cs.connecting {
@@ -588,6 +610,16 @@ func (cs *CameraStream) startStream() {
 		}
 
 		core.Logger.Info().Msgf("Starting stream for camera: %s (attempt %d/2)", cs.camera.DeviceName, attempt)
+
+		// Try the local network first. It needs no cloud session at all, so it
+		// keeps working when the account, the data centre or the internet is
+		// unavailable. Any failure falls through to the cloud path below.
+		if attempt == 1 && cs.tryLAN() {
+			cs.connecting = false
+			cs.active = true
+			cs.mutex.Unlock()
+			return
+		}
 
 		// A retry always needs a fresh PeerConnection, and so does a first
 		// attempt on a bridge that has already run: Stop() cancels its context
@@ -719,6 +751,11 @@ func (cs *CameraStream) stopStreamInternal() {
 	if cs.webrtcBridge != nil {
 		cs.webrtcBridge.OnError = nil
 		cs.webrtcBridge.Stop()
+	}
+
+	if cs.lanBridge != nil {
+		cs.lanBridge.Stop()
+		cs.lanBridge = nil
 	}
 
 	// MQTT client is NOT closed — kept alive for next stream (matches app behavior)

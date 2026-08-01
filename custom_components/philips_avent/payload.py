@@ -87,6 +87,7 @@ def build_bridge_config(
     api_host: str,
     bridge_port: int,
     cameras: list,
+    uid: str = "",
     talkback: bool = False,
 ) -> dict:
     """Build the bridge JSON the add-on reads.
@@ -106,6 +107,7 @@ def build_bridge_config(
         "device_id": device_id,
         "package_name": package_name,
         "api_host": api_host,
+        "uid": uid,
         "talkback": talkback,
         "bridge_port": bridge_port,
         "cameras": build_cameras_payload(cameras),
@@ -116,12 +118,15 @@ def build_cameras_payload(cameras: list) -> list:
     """Build the canonical bridge-JSON cameras list.
 
     Accepts any of the dict shapes we may hold:
-    - stored entry camera: ``{"id", "name", "product_id"}``
+    - stored entry camera: ``{"id", "name", "product_id", "local_key", "password"}``
     - raw Tuya discovery dict: ``{"devId"|"deviceId", "name"|"deviceName", "productId"|"productKey"}``
     - in-memory shape from async_setup_entry: ``{"deviceId", "deviceName", "productId"}``
 
-    Returns a list of ``{"camera_id", "camera_name", "product_id"}`` dicts —
-    the contract consumed by the Go bridge in ``cmd/addon/addon.go``.
+    Returns a list of ``{"camera_id", "camera_name", "product_id", "local_key",
+    "password"}`` dicts — the contract consumed by the Go bridge in
+    ``cmd/addon/addon.go``. `local_key` and `password` are what the LAN path
+    needs: the monitor's P2P login is ``md5(password + "||" + local_key)``, so
+    without both the bridge can only reach the camera through the cloud.
     """
     return [
         {
@@ -133,6 +138,8 @@ def build_cameras_payload(cameras: list) -> list:
                 or cam.get("productKey")
                 or ""
             ),
+            "local_key": cam.get("localKey") or cam.get("local_key") or "",
+            "password": cam.get("password") or "",
         }
         for cam in cameras
     ]

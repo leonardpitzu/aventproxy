@@ -85,7 +85,7 @@ signature = hmac.new(
 ).hexdigest()
 ```
 
-See `TUYA_API_RE.md` in the project root for the complete algorithm documentation.
+See the "Tuya Mobile SDK API" section of the project README for the complete algorithm.
 
 ## Where To Get the APK
 

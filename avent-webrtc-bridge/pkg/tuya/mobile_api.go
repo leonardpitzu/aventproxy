@@ -223,7 +223,7 @@ func parseAPIResponse(body []byte) (json.RawMessage, error) {
 // WebRTC config, the way the vendor app does.
 //
 // The action name and the devId payload come from the app capture recorded in
-// WHITEPAPER.md and from examples/tuya_client.py. This used to call
+// the README protocol reference and from examples/tuya_client.py. This used to call
 // `thing.m.p2p.main.pre.link.get` with no payload, which the server rejects; the
 // failure was logged as non-fatal and ignored. On devices where Tuya wants the
 // pre-link before granting the config, the next call comes back

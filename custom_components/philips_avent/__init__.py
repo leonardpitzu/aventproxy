@@ -20,6 +20,7 @@ from .const import (
     CONF_PARTNER,
     CONF_SID,
     CONF_TALKBACK,
+    CONF_UID,
     DEFAULT_BRIDGE_PORT,
     DEFAULT_TALKBACK,
     DOMAIN,
@@ -47,6 +48,33 @@ def _entry_api_host(entry: ConfigEntry) -> str:
     return entry.data.get(CONF_API_HOST) or api_host(DEFAULT_DATA_CENTER)
 
 
+def _persist_lan_secrets(hass: HomeAssistant, entry: ConfigEntry, cameras: list) -> None:
+    """Keep the LAN credentials on the entry so a restart needs no cloud call.
+
+    Only writes when something actually changed: rewriting the entry on every
+    start would also rewrite the bridge config and restart the add-on (issue #73).
+    """
+    stored = entry.data.get("cameras", [])
+    if not stored:
+        return
+    fresh = {cam.get("deviceId") or cam.get("devId"): cam for cam in cameras}
+    updated, changed = [], False
+    for cam in stored:
+        merged = dict(cam)
+        found = fresh.get(cam.get("id"), {})
+        for stored_key, api_key in (("local_key", "localKey"), ("password", "password")):
+            value = found.get(api_key) or ""
+            if value and cam.get(stored_key) != value:
+                merged[stored_key] = value
+                changed = True
+        updated.append(merged)
+    if changed:
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, "cameras": updated}
+        )
+        _LOGGER.info("Stored LAN credentials for %d camera(s)", len(updated))
+
+
 async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cameras: list) -> None:
     """Write bridge config JSON for the add-on."""
     bridge_port = entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT)
@@ -59,6 +87,7 @@ async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: Phi
         device_id=api.device_id,
         package_name=TUYA_PACKAGE_NAME,
         api_host=_entry_api_host(entry),
+        uid=entry.data.get(CONF_UID, ""),
         talkback=entry.options.get(CONF_TALKBACK, DEFAULT_TALKBACK),
         bridge_port=bridge_port,
         cameras=cameras,
@@ -144,6 +173,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "deviceId": cam["id"],
                 "deviceName": cam["name"],
                 "productId": cam.get("product_id", ""),
+                "localKey": cam.get("local_key", ""),
+                "password": cam.get("password", ""),
             }
             for cam in stored_cameras
         )
@@ -210,8 +241,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if local_key:
                 coordinator._local_key = local_key
 
+        # The first poll already carries both LAN secrets, so keep them on the
+        # camera dict for the bridge config rather than paying a second call.
+        cam["localKey"] = local_key or ""
+        cam["password"] = cam.get("password") or coordinator.device_info.get("password", "")
+
         await coordinator.start_lan()
         coordinators[cam_id] = coordinator
+
+    _persist_lan_secrets(hass, entry, cameras)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "api": api,

@@ -9,8 +9,6 @@ on:
         options:
           - release
           - rc
-          - beta
-          - dev
         default: release
   push:
     tags:
@@ -69,34 +67,20 @@ jobs:
               PRERELEASE=true
             fi
 
-            # Update version in add-on config and HA manifest. One card per
-            # channel: dev builds must not move the beta card that rc testers
-            # follow, and neither must touch the stable one.
+            # Update version in the add-on config and the HA manifest.
             sed -i "s/\"version\":.*/\"version\": \"${VERSION}\"/" custom_components/philips_avent/manifest.json
-            if [ "$TYPE" = "dev" ]; then
-              sed -i "s/^version:.*/version: \"${VERSION}\"/" aventproxy-bridge-addon-dev/config.yaml
-            elif [ "$PRERELEASE" = "true" ]; then
-              sed -i "s/^version:.*/version: \"${VERSION}\"/" aventproxy-bridge-addon-beta/config.yaml
-            else
-              sed -i "s/^version:.*/version: \"${VERSION}\"/" aventproxy-bridge-addon/config.yaml
-            fi
+            sed -i "s/^version:.*/version: \"${VERSION}\"/" aventproxy-bridge-addon/config.yaml
 
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add aventproxy-bridge-addon/config.yaml aventproxy-bridge-addon-beta/config.yaml aventproxy-bridge-addon-dev/config.yaml custom_components/philips_avent/manifest.json
+            git add aventproxy-bridge-addon/config.yaml custom_components/philips_avent/manifest.json
             git commit -m "Release ${VERSION}" || true
             git tag "${VERSION}"
             git push origin main --tags
 
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
             echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
-            # A dev build gets a tag and an image but no GitHub release, so HACS
-            # does not offer it to anyone following beta versions.
-            if [ "$TYPE" = "dev" ]; then
-              echo "publish_release=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "publish_release=true" >> "$GITHUB_OUTPUT"
-            fi
+            echo "publish_release=true" >> "$GITHUB_OUTPUT"
           else
             VERSION="${GITHUB_REF_NAME}"
             if echo "$VERSION" | grep -qE '\-(rc|beta|alpha)'; then
@@ -106,11 +90,7 @@ jobs:
             fi
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
             echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
-            if echo "$VERSION" | grep -q -- "-dev"; then
-              echo "publish_release=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "publish_release=true" >> "$GITHUB_OUTPUT"
-            fi
+            echo "publish_release=true" >> "$GITHUB_OUTPUT"
           fi
 
           echo "### Release" >> "$GITHUB_STEP_SUMMARY"

@@ -259,6 +259,8 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "id": cam.get("devId") or cam.get("deviceId"),
                             "name": cam.get("name") or cam.get("deviceName", "camera"),
                             "product_id": cam.get("productId") or cam.get("productKey") or "",
+                            "local_key": cam.get("localKey") or "",
+                            "password": cam.get("password") or "",
                         }
                         for cam in discovered
                     )

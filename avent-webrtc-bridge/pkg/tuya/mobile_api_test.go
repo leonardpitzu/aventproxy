@@ -113,7 +113,7 @@ func captureRequest(t *testing.T, call func(c *MobileSDKClient) error) url.Value
 }
 
 func TestP2PPreLinkMatchesTheAppCapture(t *testing.T) {
-	// Action name and payload come from the app capture in WHITEPAPER.md. The
+	// Action name and payload come from the app capture in the README protocol reference. The
 	// old thing.m.p2p.main.pre.link.get with no devId was rejected, and the
 	// server then refused the WebRTC config with PERMISSION_DENIED (issue #48).
 	form := captureRequest(t, func(c *MobileSDKClient) error {
