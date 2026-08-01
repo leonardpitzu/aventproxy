@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // DiscoveryPort carries the monitor's periodic broadcast, roughly every 5s.
@@ -41,10 +43,10 @@ func Discover(deviceID string, timeout time.Duration) (*Device, error) {
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
 		var sockErr error
 		if err := c.Control(func(fd uintptr) {
-			if sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); sockErr != nil {
+			if sockErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); sockErr != nil {
 				return
 			}
-			sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEPORT, 1)
+			sockErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
 		}); err != nil {
 			return err
 		}
