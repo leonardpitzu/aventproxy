@@ -11,7 +11,7 @@ A custom [Home Assistant](https://www.home-assistant.io/) integration for [Phili
 
 Video and control run **over the local network**, with the Tuya cloud used only once at setup to fetch the per-device keys. When the local path is unavailable the integration falls back to the cloud automatically, so a camera on another subnet still works.
 
-> This is a personal fork of [thekoma/aventproxy](https://github.com/thekoma/aventproxy). Fixes are contributed upstream; this repository tracks the local-streaming work.
+> This is a fork of [thekoma/aventproxy](https://github.com/thekoma/aventproxy).
 
 ## Features
 
