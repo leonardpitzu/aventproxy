@@ -24,6 +24,8 @@ type Client struct {
 	LocalKey string
 	Password string
 	UID      string
+	// IP skips discovery when Home Assistant already resolved the monitor.
+	IP string
 
 	session *Session
 	agent   *ice.Agent
@@ -35,12 +37,13 @@ type Client struct {
 }
 
 // NewClient prepares a client; nothing touches the network until Start.
-func NewClient(deviceID, localKey, password, uid string, onFrame func(*VideoFrame)) *Client {
+func NewClient(deviceID, localKey, password, uid, ip string, onFrame func(*VideoFrame)) *Client {
 	return &Client{
 		DeviceID: deviceID,
 		LocalKey: localKey,
 		Password: password,
 		UID:      uid,
+		IP:       ip,
 		onFrame:  onFrame,
 	}
 }
@@ -49,15 +52,20 @@ var candidateRE = regexp.MustCompile(`candidate:(\S+) (\d+) (\S+) (\d+) (\S+) (\
 
 // Start discovers the monitor, negotiates a session and begins streaming.
 func (c *Client) Start(ctx context.Context) error {
-	dev, err := Discover(c.DeviceID, 12*time.Second)
-	if err != nil {
-		return err
-	}
-	if dev.Protocol < 3.5 {
-		return fmt.Errorf("lan: %s announces protocol %.1f, local streaming needs 3.5", c.DeviceID, dev.Protocol)
+	ip := c.IP
+	if ip == "" {
+		dev, err := Discover(c.DeviceID, 12*time.Second)
+		if err != nil {
+			return err
+		}
+		if dev.Protocol < 3.5 {
+			return fmt.Errorf("lan: %s announces protocol %.1f, local streaming needs 3.5", c.DeviceID, dev.Protocol)
+		}
+		ip = dev.IP
 	}
 
-	c.session, err = Dial(dev.IP, c.DeviceID, c.LocalKey)
+	var err error
+	c.session, err = Dial(ip, c.DeviceID, c.LocalKey)
 	if err != nil {
 		return err
 	}

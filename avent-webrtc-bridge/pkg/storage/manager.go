@@ -30,6 +30,7 @@ type CameraInfo struct {
 	// LocalKey and Password enable the LAN path; empty means cloud-only.
 	LocalKey string `json:"localKey"`
 	Password string `json:"password"`
+	LanIP    string `json:"lanIp"`
 	UID      string `json:"uid"`
 }
 

@@ -140,6 +140,7 @@ def build_cameras_payload(cameras: list) -> list:
             ),
             "local_key": cam.get("localKey") or cam.get("local_key") or "",
             "password": cam.get("password") or "",
+            "lan_ip": cam.get("lanIp") or cam.get("lan_ip") or "",
         }
         for cam in cameras
     ]

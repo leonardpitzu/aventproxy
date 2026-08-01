@@ -83,6 +83,11 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
     def lan_connected(self) -> bool:
         return self._lan_client is not None and self._lan_client.connected
 
+    @property
+    def lan_ip(self) -> str:
+        """Monitor's address, so the bridge need not repeat the discovery."""
+        return (self._lan_client.ip if self._lan_client else None) or ""
+
     @callback
     def _on_lan_dps_update(self, dps: dict[str, Any]) -> None:
         if self.data is None:

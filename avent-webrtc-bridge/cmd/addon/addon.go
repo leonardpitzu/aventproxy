@@ -45,6 +45,9 @@ type Camera struct {
 	// integration, which simply means cloud-only for that camera.
 	LocalKey string `json:"local_key"`
 	Password string `json:"password"`
+	// LanIP is Home Assistant's own discovery result, reused so the bridge does
+	// not contend with it for the broadcast socket.
+	LanIP string `json:"lan_ip"`
 }
 
 // lanUID prefers the account id the integration passed. Falling back to the
@@ -242,8 +245,7 @@ func runAddon(cmd *cobra.Command, args []string) error {
 			RTSPPath:   c.Path,
 			UserKey:    userKey,
 			LocalKey:   c.LocalKey,
-			Password:   c.Password,
-			UID:        lanUID(cfg, userInfo),
+			Password:   c.Password, LanIP: c.LanIP, UID: lanUID(cfg, userInfo),
 		})
 		pathLog = append(pathLog, c.Path)
 		core.Logger.Info().Msgf("Camera registered: id=%s name=%s path=%s", c.ID, c.Name, c.Path)

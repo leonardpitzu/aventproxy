@@ -36,6 +36,7 @@ class TestBuildCamerasPayloadShape:
             "product_id": "selj2idknqhjnids",
             "local_key": "",
             "password": "",
+                "lan_ip": "",
         }
 
     def test_product_id_empty_for_scd973(self):
@@ -135,6 +136,7 @@ class TestBuildBridgeConfig:
                 "product_id": "p1",
                 "local_key": "",
                 "password": "",
+                "lan_ip": "",
             },
         ]
 

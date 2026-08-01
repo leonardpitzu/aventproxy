@@ -56,6 +56,11 @@ class TuyaLANClient:
             self._run(), "tuya_lan_listener"
         )
 
+    @property
+    def ip(self) -> str | None:
+        """Address of the monitor, once a LAN session has resolved one."""
+        return self._ip
+
     async def stop(self) -> None:
         self._stop_event.set()
         if self._task and not self._task.done():

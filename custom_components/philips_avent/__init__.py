@@ -262,6 +262,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             cam["password"] = await _lan_password(api, cam_id)
 
         await coordinator.start_lan()
+        cam["lanIp"] = coordinator.lan_ip
         coordinators[cam_id] = coordinator
 
     _persist_lan_secrets(hass, entry, cameras)

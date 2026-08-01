@@ -77,6 +77,7 @@ func (lb *LANBridge) Start() error {
 		lb.camera.LocalKey,
 		lb.camera.Password,
 		lb.camera.UID,
+		lb.camera.LanIP,
 		lb.onFrame,
 	)
 

@@ -1,12 +1,14 @@
 package lan
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -34,7 +36,21 @@ type Device struct {
 // reliable way to know whether to speak 3.3 or 3.5: guessing 3.3 against a 3.5
 // monitor yields a session that connects and then cannot read any frame.
 func Discover(deviceID string, timeout time.Duration) (*Device, error) {
-	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", DiscoveryPort))
+	// Home Assistant's own tinytuya listener already holds 6667, and a Tuya
+	// announcement is a broadcast every listener may have a copy of.
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+		var sockErr error
+		if err := c.Control(func(fd uintptr) {
+			if sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); sockErr != nil {
+				return
+			}
+			sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEPORT, 1)
+		}); err != nil {
+			return err
+		}
+		return sockErr
+	}}
+	conn, err := lc.ListenPacket(context.Background(), "udp4", fmt.Sprintf(":%d", DiscoveryPort))
 	if err != nil {
 		return nil, fmt.Errorf("lan: listen %d: %w", DiscoveryPort, err)
 	}
