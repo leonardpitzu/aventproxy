@@ -6,6 +6,7 @@ on:
     paths-ignore: ["**.md", ".gitignore", "LICENSE"]
   pull_request:
     paths-ignore: ["**.md", ".gitignore", "LICENSE"]
+  workflow_dispatch:
 
 permissions:
   contents: read
