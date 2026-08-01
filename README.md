@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-A custom [Home Assistant](https://www.home-assistant.io/) integration for [Philips Avent](https://www.philips.co.uk/c-m-mo/baby-monitors) SCD9xx baby monitors — live video, room temperature, night light, lullabies and motion/sound alerts.
+A custom [Home Assistant](https://www.home-assistant.io/) integration for [Philips Avent](https://www.philips.co.uk/c-m-mo/baby-monitors) SCD9xx baby monitors - live video, room temperature, night light, lullabies and motion/sound alerts.
 
 Video and control run **over the local network**, with the Tuya cloud used only once at setup to fetch the per-device keys. When the local path is unavailable the integration falls back to the cloud automatically, so a camera on another subnet still works.
 
@@ -20,7 +20,7 @@ Video and control run **over the local network**, with the Tuya cloud used only 
 | Live video | `camera` | 1080p H.264, served as RTSP by the bridge add-on |
 | Temperature | `sensor` | Room temperature from the built-in sensor |
 | WiFi signal | `sensor` | Monitor's RSSI |
-| Night light | `switch` + `number` | On/off plus brightness 1–100 % |
+| Night light | `switch` + `number` | On/off plus brightness 1-100 % |
 | Lullabies | `button` + `select` + `number` | Play/pause/stop/next/prev, track, timer, volume |
 | Motion alert | `switch` | Enable motion detection on the device |
 | Sound alert | `switch` | Enable sound detection on the device |
@@ -46,7 +46,7 @@ step fails, so a camera it cannot reach locally still works exactly as before.
 
 Once it is up, nothing in that chain touches the internet. The three credentials
 it needs are fetched once at setup and cached in the config entry: `local_key`
-and `uid` from the device lookup, and the P2P `password` from the RTC config —
+and `uid` from the device lookup, and the P2P `password` from the RTC config -
 the monitor's media login is `md5(password + "||" + local_key)`.
 
 **The monitor must have had internet access when it booted.** It ignores local
@@ -77,7 +77,7 @@ The integration talks to the Tuya API generically, so unlisted Philips Avent mon
 | SCD951 | Working |
 | SCD643/26 | Working |
 | SCD971 | Working |
-| SCD921 | Partial — video is intermittent, detection inconsistent |
+| SCD921 | Partial - video is intermittent, detection inconsistent |
 | SCD953/26 | Unconfirmed |
 
 ## Installation
@@ -87,14 +87,14 @@ Both halves are required: the integration talks to the monitor, the add-on serve
 ### HACS (recommended)
 
 1. Open HACS in your Home Assistant instance.
-2. Go to **Integrations** → **⋮** → **Custom repositories**.
+2. Go to **Integrations** -> **...** -> **Custom repositories**.
 3. Add `https://github.com/leonardpitzu/aventproxy` as an **Integration**.
 4. Search for **Philips Avent Baby Monitor** and install it.
 5. Restart Home Assistant.
 
 ### Add-on
 
-1. Go to **Settings** → **Add-ons** → **Add-on Store** → **⋮** → **Repositories**.
+1. Go to **Settings** -> **Add-ons** -> **Add-on Store** -> **...** -> **Repositories**.
 2. Add `https://github.com/leonardpitzu/aventproxy`.
 3. Install **Philips Avent WebRTC Bridge**.
 4. Start it.
@@ -107,7 +107,7 @@ Copy `custom_components/philips_avent/` into your Home Assistant `config/custom_
 
 ## Configuration
 
-1. **Settings** → **Devices & Services** → **Add Integration** → **Philips Avent Baby Monitor**.
+1. **Settings** -> **Devices & Services** -> **Add Integration** -> **Philips Avent Baby Monitor**.
 2. Enter the email and password you use for the Baby Monitor+ app, and check the country matches the one the account was created in.
 3. Enter the 6-digit code sent to your email.
 
@@ -129,7 +129,7 @@ A wrong bridge host makes the camera entity flap between `Unavailable` and `Idle
 
 `binary_sensor.<camera>_sound_detected` and `binary_sensor.<camera>_motion_detected` turn on for about 30 seconds when the monitor reports an event.
 
-Detection must also be enabled on the device, via the **Motion Alert** / **Sound Alert** switches — otherwise the monitor never sends anything.
+Detection must also be enabled on the device, via the **Motion Alert** / **Sound Alert** switches - otherwise the monitor never sends anything.
 
 ```yaml
 automation:
@@ -150,26 +150,26 @@ automation:
 The integration speaks the same Tuya Mobile SDK API as the official app, including the password + MFA login, so its traffic is indistinguishable from the real client.
 
 ```
-┌──────────────────────────────┐
-│        Home Assistant        │
-│                              │
-│  ┌────────────────────────┐  │      Tuya cloud
-│  │  Integration           │◄─┼───►  (setup only:
-│  │  entities, DPS, login  │  │       login, keys)
-│  └────────────────────────┘  │
-│              │ config file   │
-│              ▼               │
-│  ┌────────────────────────┐  │      Monitor
-│  │  Bridge add-on         │◄─┼───►  LAN 6667/6668
-│  │  LAN first, cloud      │  │      then ICE + KCP
-│  │  fallback → RTSP       │  │      (cloud fallback:
-│  │  :38554                │  │       MQTT + WebRTC)
-│  └────────────────────────┘  │
-│              │               │
-│              ▼               │
-│      camera entities         │
-│  rtsp://host:38554/<name>    │
-└──────────────────────────────┘
++------------------------------+
+|        Home Assistant        |
+|                              |
+|  +------------------------+  |      Tuya cloud
+|  |  Integration           |<-+--->  (setup only:
+|  |  entities, DPS, login  |  |       login, keys)
+|  +------------------------+  |
+|              | config file   |
+|              v               |
+|  +------------------------+  |      Monitor
+|  |  Bridge add-on         |<-+--->  LAN 6667/6668
+|  |  LAN first, cloud      |  |      then ICE + KCP
+|  |  fallback -> RTSP      |  |      (cloud fallback:
+|  |  :38554                |  |       MQTT + WebRTC)
+|  +------------------------+  |
+|              |               |
+|              v               |
+|      camera entities         |
+|  rtsp://host:38554/<name>    |
++------------------------------+
 ```
 
 ## Camera data points
@@ -179,10 +179,10 @@ The integration speaks the same Tuya Mobile SDK API as the official app, includi
 | 134 | `motion_switch` | Motion alert | on/off |
 | 138 | `bulb_switch` | Night light | on/off |
 | 139 | `decibel_switch` | Sound alert | on/off |
-| 158 | `floodlight_lightness` | Brightness | 1–100 |
+| 158 | `floodlight_lightness` | Brightness | 1-100 |
 | 201 | `play_control` | Lullaby | play/pause/stop/next/prev |
-| 207 | `sensor_temperature` | Temperature | °C × 100 |
-| 209 | `play_volume` | Volume | 1–100 |
+| 207 | `sensor_temperature` | Temperature | °C x 100 |
+| 209 | `play_volume` | Volume | 1-100 |
 | 212 | `alarm_message` | Alarm record (motion/sound event) | base64 JSON |
 | 237 | `privacy_switch` | Privacy mode | 0/1 |
 
@@ -223,14 +223,14 @@ This paper documents the complete reverse engineering of the Tuya Mobile SDK API
 - The API signing algorithm is **HMAC-SHA256** with a composite key derived from four static components extractable from the APK
 - Authentication uses the **same password + MFA flow** as the vendor app (email + password + RSA encryption + 6-digit email MFA code), making API traffic indistinguishable from legitimate app usage
 - A **passwordless OTP fallback** also exists but uses a different API endpoint
-- The signing key is **static per APK version** — extract once, use indefinitely
+- The signing key is **static per APK version** - extract once, use indefinitely
 - The SID is the only rotating credential, renewable via the password + MFA flow
 - All WebRTC/MQTT/RTSP bridge logic is protocol-level and API-agnostic
 - **Local signaling needs no cloud credential at all** (section 16, captured by @leonardpitzu): the
   camera negotiates a stream over its own TCP 6668 session, with the `localKey` as the only
   cloud-derived secret and `smartlife.m.rtc.config.get` not required
 
-**Result:** Full autonomous API access from Python/Go, suitable for Home Assistant integration with a config flow identical to the vendor app's login (email → password → MFA code from email).
+**Result:** Full autonomous API access from Python/Go, suitable for Home Assistant integration with a config flow identical to the vendor app's login (email -> password -> MFA code from email).
 
 ---
 
@@ -245,11 +245,11 @@ A consumer baby monitor, sold under a major brand name, uses the Tuya IoT platfo
 - Exposes RTSP on port 554 but with AES-encrypted video (unusable without the session key)
 - Uses Tuya's whitelabel platform, meaning the vendor's app is a thin skin over Tuya's SDK
 
-The goal: integrate the camera into Home Assistant for local viewing, recording, and automation — without depending on the vendor's app or servers for the video path.
+The goal: integrate the camera into Home Assistant for local viewing, recording, and automation - without depending on the vendor's app or servers for the video path.
 
 #### Prior Work
 
-An earlier phase of this project produced `aventproxy` — an RTSP proxy that handles the camera's non-standard RTSP implementation (rejects `OPTIONS` requests). This solved the protocol compatibility issue but not the authentication/encryption problem.
+An earlier phase of this project produced `aventproxy` - an RTSP proxy that handles the camera's non-standard RTSP implementation (rejects `OPTIONS` requests). This solved the protocol compatibility issue but not the authentication/encryption problem.
 
 #### Why Tuya Mobile SDK
 
@@ -273,7 +273,7 @@ The camera exposes the following LAN services:
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 554 | RTSP | Answers, but gated behind the P2P/KCP tunnel — not a consumable stream (see section 14) |
+| 554 | RTSP | Answers, but gated behind the P2P/KCP tunnel - not a consumable stream (see section 14) |
 | 6000 | Tuya Auth | RTSP credential negotiation |
 | 6668 | Tuya LAN | Tuya localKey control channel (DPS, commands); carries no media |
 | 8686 | Unknown | Discovery/control |
@@ -283,9 +283,9 @@ The camera exposes the following LAN services:
 
 The mobile app maintains three persistent connections:
 
-1. **HTTPS** to `a1.tuyaeu.com` — API calls (REST over form-encoded POST)
-2. **MQTT/TLS** to `m1.tuyaeu.com:8883` — Real-time signaling, device events
-3. **TCP** to camera `192.168.x.x:6668` — Direct LAN video transport
+1. **HTTPS** to `a1.tuyaeu.com` - API calls (REST over form-encoded POST)
+2. **MQTT/TLS** to `m1.tuyaeu.com:8883` - Real-time signaling, device events
+3. **TCP** to camera `192.168.x.x:6668` - Direct LAN video transport
 
 When streaming, the app authenticates via the cloud and holds a direct LAN connection to the camera
 on port 6668.
@@ -318,7 +318,7 @@ Determined the streaming path by examining active network connections during a l
 Process: com.vendor.app:monitor (PID xxxxx)
 
 TCP connections:
-  phone:48306 → camera:6668     ESTABLISHED   (LAN video transport)
+  phone:48306 -> camera:6668     ESTABLISHED   (LAN video transport)
 
 UDP listeners:
   0.0.0.0:6666                  (Tuya discovery)
@@ -328,9 +328,9 @@ UDP listeners:
 Process: com.vendor.app (PID xxxxx)
 
 TCP connections:
-  phone:38435 → 3.x.x.x:1443   ESTABLISHED   (Tuya cloud - signaling)
-  phone:xxxxx → [2a05:...]:443  ESTABLISHED   (Tuya MQTT - TLS)
-  phone:xxxxx → [2a05:...]:8883 ESTABLISHED   (Tuya MQTT - TLS)
+  phone:38435 -> 3.x.x.x:1443   ESTABLISHED   (Tuya cloud - signaling)
+  phone:xxxxx -> [2a05:...]:443  ESTABLISHED   (Tuya MQTT - TLS)
+  phone:xxxxx -> [2a05:...]:8883 ESTABLISHED   (Tuya MQTT - TLS)
 ```
 
 **Key insight:** the video path is local while authentication and signaling go through the cloud.
@@ -384,7 +384,7 @@ Parameters are form-encoded (not JSON). Each request includes:
 | `ttid` | `sdk_international@wx3at9q...` | Tenant/app ID |
 | `deviceId` | `4ea12...` | Phone device identifier |
 
-**Critical observation:** All responses with `et: '3'` are encrypted. Switching to `et: '0.0.1'` returns plaintext responses — the server accepts both.
+**Critical observation:** All responses with `et: '3'` are encrypted. Switching to `et: '0.0.1'` returns plaintext responses - the server accepts both.
 
 #### API Actions Discovered
 
@@ -414,12 +414,12 @@ The signing flow in Java:
 
 ```
 ThingApiSignManager.generateSignatureSdk(Map params)
-  → filter params to whitelist
-  → sort alphabetically
-  → if postData present: replace value with swapSignString(MD5(postData))
-  → concatenate as "key=value||key=value||..."
-  → call doCommandNative(context, 1, paramString.getBytes(), null, debugFlag)
-  → return hex string result
+  -> filter params to whitelist
+  -> sort alphabetically
+  -> if postData present: replace value with swapSignString(MD5(postData))
+  -> concatenate as "key=value||key=value||..."
+  -> call doCommandNative(context, 1, paramString.getBytes(), null, debugFlag)
+  -> return hex string result
 ```
 
 **Parameter whitelist** (only these keys are included in the signature):
@@ -430,11 +430,11 @@ os, clientId, postData, time, requestId, et, n4h5, sid, chKey, sp
 
 **swapSignString** rearranges a 32-char hex string in 8-char blocks:
 ```
-Input:  [A][B][C][D]    (4 blocks × 8 chars)
+Input:  [A][B][C][D]    (4 blocks x 8 chars)
 Output: [B][A][D][C]
 ```
 
-**Initialization:** `doCommandNative(context, 0, appSecret.getBytes(), appKey.getBytes(), debugFlag)` — passes the app credentials to the native layer during SDK init.
+**Initialization:** `doCommandNative(context, 0, appSecret.getBytes(), appKey.getBytes(), debugFlag)` - passes the app credentials to the native layer during SDK init.
 
 #### 6.2 Native Library Analysis
 
@@ -467,10 +467,10 @@ The key is stored as a `std::__ndk1::basic_string` at a fixed offset in the `.bs
 var lib = Process.getModuleByName("libthing_security.so");
 var strAddr = lib.base.add(0x39070);
 var flag = strAddr.readU8();
-// libc++ SSO: if (flag & 1) → heap allocated
+// libc++ SSO: if (flag & 1) -> heap allocated
 var len = strAddr.add(8).readU64();     // 192
 var dataPtr = strAddr.add(16).readPointer();
-// Read 192 bytes from dataPtr → the complete signing key
+// Read 192 bytes from dataPtr -> the complete signing key
 ```
 
 **Result:**
@@ -494,7 +494,7 @@ import hmac, hashlib
 signing_key = "{pkg}_{cert}_{embedded}_{secret}"
 params_string = "a=smartlife.p.time.get||appVersion=1.8.0||chKey=071d81fa||..."
 signature = hmac.new(signing_key.encode(), params_string.encode(), hashlib.sha256).hexdigest()
-# → matches the captured sign value exactly
+# -> matches the captured sign value exactly
 ```
 
 #### 6.5 Autonomous API Calls
@@ -502,9 +502,9 @@ signature = hmac.new(signing_key.encode(), params_string.encode(), hashlib.sha25
 With the signing algorithm known, API calls were made from Python without any phone involvement:
 
 ```python
-# Independent API call — no phone, no Frida, no proxy
+# Independent API call - no phone, no Frida, no proxy
 response = call_api("tuya.m.device.get", post_data={"devId": "..."})
-# → returns full device info including localKey, DPS, online status
+# -> returns full device info including localKey, DPS, online status
 ```
 
 ---
@@ -519,15 +519,15 @@ The session ID (SID) is the only rotating credential. It's obtained during login
 
 This is the exact flow used by the vendor's mobile app, reverse engineered via Frida instrumentation of a clean first-login (app data wiped, no prior session).
 
-**Step 1 — Obtain RSA token:**
+**Step 1 - Obtain RSA token:**
 ```
 Action: thing.m.user.username.token.get  (v2.0)
 PostData: {"countryCode": "39", "username": "user@example.com", "isUid": false}
-SID: (empty — no session required)
+SID: (empty - no session required)
 Result: {"token": "f065...", "pbKey": "MIGd...", "publicKey": "1353...", "exponent": "3"}
 ```
 
-**Step 2 — Encrypt password and attempt login:**
+**Step 2 - Encrypt password and attempt login:**
 
 The password is MD5-hashed, then RSA-encrypted using the `pbKey` from step 1:
 ```python
@@ -549,9 +549,9 @@ Result: {"errorCode": "MFA_NEED_SEND_CODE"}
 
 The server validates the password and responds with `MFA_NEED_SEND_CODE`, indicating that MFA is required. Note: using the wrong RSA token endpoint (`thing.m.user.email.token.create` v1.0 instead of `thing.m.user.username.token.get` v2.0) produces a misleading `USER_PASSWD_WRONG` error even with valid credentials.
 
-**Step 3 — Request MFA code (requires new RSA token):**
+**Step 3 - Request MFA code (requires new RSA token):**
 ```
-Action: thing.m.user.username.token.get  (v2.0)  — fresh token needed
+Action: thing.m.user.username.token.get  (v2.0)  - fresh token needed
 Action: thing.m.user.username.mfa.code.get  (v1.0)
 PostData: {
   "countryCode": "39", "username": "user@example.com",
@@ -563,9 +563,9 @@ Result: {"result": {"countryCode": "39", "email": "user@example.com"}, "success"
 
 The server sends a 6-digit code to the user's email.
 
-**Step 4 — Complete login with MFA code (requires new RSA token):**
+**Step 4 - Complete login with MFA code (requires new RSA token):**
 ```
-Action: thing.m.user.username.token.get  (v2.0)  — fresh token needed
+Action: thing.m.user.username.token.get  (v2.0)  - fresh token needed
 Action: thing.m.user.email.password.login  (v3.0)
 PostData: {
   "countryCode": "39", "email": "user@example.com",
@@ -589,11 +589,11 @@ The Tuya SDK also exposes a passwordless login endpoint that bypasses both passw
 ```
 Action: thing.m.user.email.code.send  (no SID needed)
 PostData: {"email": "user@example.com", "countryCode": "39", "type": 1}
-→ sends 6-digit code to email
+-> sends 6-digit code to email
 
 Action: thing.m.user.email.code.login  (no SID needed)
 PostData: {"email": "user@example.com", "code": "123456", "countryCode": "39"}
-→ returns SID directly
+-> returns SID directly
 ```
 
 This endpoint is likely intended for "forgot password" or passwordless onboarding flows. It produces a valid SID with full account access. However, it is not used by the vendor app's normal login flow and uses a different API action, making it potentially distinguishable server-side.
@@ -711,10 +711,10 @@ Output: JSON file with all extracted components. The embedded key requires one a
 The entire process is generic. Any app built on the Tuya Thing SDK uses the same signing mechanism. The steps for a new target:
 
 1. Obtain the APK
-2. Run the Docker extractor → 4/5 components
-3. Run Frida one-shot on a phone with the app → embedded key
-4. Combine → complete signing key
-5. Use OTP login flow → SID
+2. Run the Docker extractor -> 4/5 components
+3. Run Frida one-shot on a phone with the app -> embedded key
+4. Combine -> complete signing key
+5. Use OTP login flow -> SID
 6. Full API access
 
 ---
@@ -726,18 +726,18 @@ The entire process is generic. Any app built on the Tuya Thing SDK uses the same
 | Action | Version | Description | Requires SID |
 |--------|---------|-------------|:---:|
 | `thing.m.user.username.token.get` | 2.0 | Get RSA token for password encryption | No |
-| `thing.m.user.email.password.login` | 3.0 | Password + MFA login → returns SID | No |
+| `thing.m.user.email.password.login` | 3.0 | Password + MFA login -> returns SID | No |
 | `thing.m.user.username.mfa.code.get` | 1.0 | Trigger MFA code email | No |
 | `thing.m.user.email.code.send` | 1.0 | Send OTP to email (passwordless) | No |
-| `thing.m.user.email.code.login` | 1.0 | Login with OTP → returns SID (passwordless) | No |
+| `thing.m.user.email.code.login` | 1.0 | Login with OTP -> returns SID (passwordless) | No |
 
 #### Device Management
 
 | Action | Description | PostData |
 |--------|-------------|----------|
 | `tuya.m.device.get` | Full device info | `{"devId": "..."}` |
-| `m.life.home.space.list` | List homes | — |
-| `smartlife.m.user.info.get` | User profile + domain URLs | — |
+| `m.life.home.space.list` | List homes | - |
+| `smartlife.m.user.info.get` | User profile + domain URLs | - |
 
 #### Streaming
 
@@ -745,7 +745,7 @@ The entire process is generic. Any app built on the Tuya Thing SDK uses the same
 |--------|-------------|----------|
 | `smartlife.m.rtc.config.get` | WebRTC config (ICE/STUN/TURN) | `{"devId": "..."}` |
 | `smartlife.m.p2p.main.pre.link.get` | Pre-connect signal | `{"devId": "..."}` |
-| `smartlife.m.token.get` | MQTT token | — |
+| `smartlife.m.token.get` | MQTT token | - |
 
 #### Request Signing
 
@@ -760,7 +760,7 @@ def sign(params, signing_key):
     filtered = {k: v for k, v in params.items() if k in WHITELIST and v}
     if "postData" in filtered:
         md5 = hashlib.md5(filtered["postData"].encode()).hexdigest()
-        # Swap 8-char blocks: [A][B][C][D] → [B][A][D][C]
+        # Swap 8-char blocks: [A][B][C][D] -> [B][A][D][C]
         filtered["postData"] = md5[8:16]+md5[0:8]+md5[24:32]+md5[16:24]
     param_str = "||".join(f"{k}={filtered[k]}" for k in sorted(filtered))
     return hmac.new(signing_key.encode(), param_str.encode(), hashlib.sha256).hexdigest()
@@ -773,49 +773,49 @@ def sign(params, signing_key):
 #### Home Assistant Custom Component
 
 ```
-┌─────────────────────────────────────────────┐
-│                Home Assistant                │
-│                                              │
-│  ┌──────────────────────────────────────┐   │
-│  │      Config Flow (like Tado)         │   │
-│  │  1. Enter email                      │   │
-│  │  2. Receive OTP via email            │   │
-│  │  3. Enter OTP → get SID             │   │
-│  │  4. Auto-discover cameras            │   │
-│  └──────────┬───────────────────────────┘   │
-│             │                                │
-│  ┌──────────▼───────────────────────────┐   │
-│  │      Tuya Mobile SDK Client          │   │
-│  │  - HMAC-SHA256 signing               │   │
-│  │  - SID management + auto-refresh     │   │
-│  │  - WebRTC config fetching            │   │
-│  └──────────┬───────────────────────────┘   │
-│             │                                │
-│  ┌──────────▼───────────────────────────┐   │
-│  │      WebRTC → RTSP Bridge            │   │
-│  │  - MQTT signaling                    │   │
-│  │  - ICE/STUN/TURN negotiation         │   │
-│  │  - RTP forwarding to RTSP server     │   │
-│  └──────────┬───────────────────────────┘   │
-│             │                                │
-│  ┌──────────▼───────────────────────────┐   │
-│  │      camera entity                   │   │
-│  │  rtsp://localhost:8554/CameraName    │   │
-│  └──────────────────────────────────────┘   │
-└─────────────────────────────────────────────┘
++---------------------------------------------+
+|                Home Assistant               |
+|                                             |
+|  +--------------------------------------+   |
+|  |      Config Flow (like Tado)         |   |
+|  |  1. Enter email                      |   |
+|  |  2. Receive OTP via email            |   |
+|  |  3. Enter OTP -> get SID             |   |
+|  |  4. Auto-discover cameras            |   |
+|  +----------+---------------------------+   |
+|             |                               |
+|  +----------v---------------------------+   |
+|  |      Tuya Mobile SDK Client          |   |
+|  |  - HMAC-SHA256 signing               |   |
+|  |  - SID management + auto-refresh     |   |
+|  |  - WebRTC config fetching            |   |
+|  +----------+---------------------------+   |
+|             |                               |
+|  +----------v---------------------------+   |
+|  |      WebRTC -> RTSP Bridge           |   |
+|  |  - MQTT signaling                    |   |
+|  |  - ICE/STUN/TURN negotiation         |   |
+|  |  - RTP forwarding to RTSP server     |   |
+|  +----------+---------------------------+   |
+|             |                               |
+|  +----------v---------------------------+   |
+|  |      camera entity                   |   |
+|  |  rtsp://localhost:8554/CameraName    |   |
+|  +--------------------------------------+   |
++---------------------------------------------+
 ```
 
 #### Credential Hierarchy
 
 ```
 Static (per APK version, extract once):
-  ├── packageName        ← from AndroidManifest.xml
-  ├── certSHA256         ← from APK signing certificate
-  ├── embeddedKey        ← from assets/cers (Frida one-shot)
-  └── appSecret          ← from BuildConfig.java
+  +-- packageName        <- from AndroidManifest.xml
+  +-- certSHA256         <- from APK signing certificate
+  +-- embeddedKey        <- from assets/cers (Frida one-shot)
+  +-- appSecret          <- from BuildConfig.java
 
 Dynamic (per user session):
-  └── SID                ← from OTP login (renewable via email)
+  +-- SID                <- from OTP login (renewable via email)
 ```
 
 ---
@@ -824,7 +824,7 @@ Dynamic (per user session):
 
 #### 11.1 Direct RTSP Authentication (Weeks of Effort)
 
-**Approach:** The camera's RTSP server on port 554 is open (no auth) but streams AES-encrypted video. A custom proxy (`baby_rtsp_proxy.py`) successfully handled the RTSP handshake and received video frames — but they were encrypted with an AES key negotiated on port 6000 using the Tuya LAN protocol.
+**Approach:** The camera's RTSP server on port 554 is open (no auth) but streams AES-encrypted video. A custom proxy (`baby_rtsp_proxy.py`) successfully handled the RTSP handshake and received video frames - but they were encrypted with an AES key negotiated on port 6000 using the Tuya LAN protocol.
 
 **What worked:** DESCRIBE, SETUP, PLAY all succeed. Raw H.264 NALUs are received.
 **What failed:** Video is AES-encrypted. The key is negotiated in a binary handshake on port 6000 that involves the device's `localKey` and a session-specific derivation.
@@ -875,7 +875,7 @@ Dynamic (per user session):
 
 #### 11.6 Frida Java Bridge via Python API
 
-**Approach:** Use Frida's Python API (`frida.attach()`, `session.create_script()`) to call Java methods for signing requests — creating a "signing proxy" where the phone signs requests and the PC makes API calls.
+**Approach:** Use Frida's Python API (`frida.attach()`, `session.create_script()`) to call Java methods for signing requests - creating a "signing proxy" where the phone signs requests and the PC makes API calls.
 
 **What happened:** `Java is not defined` error. The Java bridge is not available when using `session.create_script()` in some Frida versions. The bridge works fine when using `frida` CLI with `-l script.js`, but not via the Python API.
 
@@ -885,7 +885,7 @@ Dynamic (per user session):
 
 #### 11.7 Brute-Forcing the Signing Key Derivation
 
-**Approach:** With a known input-output pair (parameter string → signature), try all plausible key derivations from `appSecret`, `appKey`, and the APK certificate hash.
+**Approach:** With a known input-output pair (parameter string -> signature), try all plausible key derivations from `appSecret`, `appKey`, and the APK certificate hash.
 
 **Attempts (all failed):**
 - HMAC-SHA256 with appSecret, appKey, or any combination
@@ -903,8 +903,8 @@ Dynamic (per user session):
 
 Multiple Frida hook attempts crashed the target app:
 
-- **JSONObject constructor hook:** Hooked `new JSONObject(String)` to intercept API responses. Caused infinite recursion (the hook itself triggers JSON parsing) → stack overflow → app crash.
-- **MessageDigest hook:** Successfully hooked but SHA-256 calls during signing were NOT going through Java's `MessageDigest` — the native code uses mbedTLS directly, not JNI callbacks to Java crypto.
+- **JSONObject constructor hook:** Hooked `new JSONObject(String)` to intercept API responses. Caused infinite recursion (the hook itself triggers JSON parsing) -> stack overflow -> app crash.
+- **MessageDigest hook:** Successfully hooked but SHA-256 calls during signing were NOT going through Java's `MessageDigest` - the native code uses mbedTLS directly, not JNI callbacks to Java crypto.
 - **Java.perform + Module operations:** Mixing Java bridge operations with native `Module`/`Memory` operations in the same callback caused access violations.
 - **App PID instability:** The app's PID changed frequently (app restarts after Frida detaches ungracefully), requiring PID re-detection before each hook attempt.
 
@@ -917,25 +917,25 @@ The r2ghidra decompiler produced useful but incomplete results for the 769-line 
 - The decompiler cannot identify which Java methods are being called through JNI
 - String references are resolved but method signatures require manual cross-referencing
 
-The decompilation was useful for understanding the high-level flow (init → cert hash → store key → sign), but the actual key construction required memory dumping rather than static analysis.
+The decompilation was useful for understanding the high-level flow (init -> cert hash -> store key -> sign), but the actual key construction required memory dumping rather than static analysis.
 
 #### 11.10 MQTT Credential Derivation (Multiple Failed Attempts)
 
 **Context:** After successfully reversing the API signing algorithm (Phase 3) and login flow (Phase 4), the final obstacle was connecting to the MQTT broker for WebRTC signaling. The existing open-source tool (`tuya-ipc-terminal`) uses MQTT credentials from the Smart Life web portal (`/api/jarvis/mqtt`), which is inaccessible to vendor-namespaced accounts.
 
-**Attempt 1 — Web portal MQTT config API:** The endpoint `smartlife.m.mqtt.config.get` and `tuya.m.mqtt.config.get` both return `API_OR_API_VERSION_WRONG` on the mobile SDK. These APIs don't exist on the mobile platform.
+**Attempt 1 - Web portal MQTT config API:** The endpoint `smartlife.m.mqtt.config.get` and `tuya.m.mqtt.config.get` both return `API_OR_API_VERSION_WRONG` on the mobile SDK. These APIs don't exist on the mobile platform.
 
-**Attempt 2 — Token as MQTT password:** The `smartlife.m.token.get` API returns a UUID token. Using it as MQTT password with various username formats (`web_{uid}`, `uid`, `ecode`) → all rejected with "Not authorized".
+**Attempt 2 - Token as MQTT password:** The `smartlife.m.token.get` API returns a UUID token. Using it as MQTT password with various username formats (`web_{uid}`, `uid`, `ecode`) -> all rejected with "Not authorized".
 
-**Attempt 3 — MD5(MD5(appKey) + ecode) as password:** From the Frida login capture, the app computes this hash after login. Used as MQTT password → still "Not authorized".
+**Attempt 3 - MD5(MD5(appKey) + ecode) as password:** From the Frida login capture, the app computes this hash after login. Used as MQTT password -> still "Not authorized".
 
-**Attempt 4 — SID cookie on web portal:** Tried calling the Smart Life web portal's `/api/jarvis/mqtt` with the mobile SDK SID set as a cookie → `USER_SESSION_LOSS`. Different session systems.
+**Attempt 4 - SID cookie on web portal:** Tried calling the Smart Life web portal's `/api/jarvis/mqtt` with the mobile SDK SID set as a cookie -> `USER_SESSION_LOSS`. Different session systems.
 
-**Attempt 5 — Client ID only (no username/password):** The app's MQTT client doesn't call `setUserName()`/`setPassword()` through the standard Java setters. Tried connecting with just the client ID → "Server unavailable".
+**Attempt 5 - Client ID only (no username/password):** The app's MQTT client doesn't call `setUserName()`/`setPassword()` through the standard Java setters. Tried connecting with just the client ID -> "Server unavailable".
 
-**Breakthrough:** Hooked `MqttConnectOptions.getUserName()` and `getPassword()` instead of the setters. The MQTT library reads credentials through getters during connection, revealing that credentials ARE set — just through a different code path (the `SdkMqttCertificationInfo` class).
+**Breakthrough:** Hooked `MqttConnectOptions.getUserName()` and `getPassword()` instead of the setters. The MQTT library reads credentials through getters during connection, revealing that credentials ARE set - just through a different code path (the `SdkMqttCertificationInfo` class).
 
-**Root cause of all failures:** The MQTT password uses `doCommandNative(cmd=2)` — a different native function than the API signing (cmd=1). Command 2 computes `MD5(MD5(signing_key) + ecode)` and returns the middle 16 characters. The signing key (not appKey or appSecret alone) is the HMAC key, which is why no combination of partial credentials worked.
+**Root cause of all failures:** The MQTT password uses `doCommandNative(cmd=2)` - a different native function than the API signing (cmd=1). Command 2 computes `MD5(MD5(signing_key) + ecode)` and returns the middle 16 characters. The signing key (not appKey or appSecret alone) is the HMAC key, which is why no combination of partial credentials worked.
 
 **Time wasted:** ~2 hours across MQTT credential attempts, decompilation of multiple MQTT classes, and testing 20+ derivation formulas.
 
@@ -951,13 +951,13 @@ The existing WebRTC bridge (`tuya-ipc-terminal`) obtains MQTT credentials from t
 
 #### Discovery Method
 
-1. **Frida hook on `MqttConnectOptions.getUserName()` / `getPassword()`** — the standard `setUserName`/`setPassword` methods were never called. The Tuya SDK uses a custom certification info class (`SdkMqttCertificationInfo`) that provides credentials through getter methods.
+1. **Frida hook on `MqttConnectOptions.getUserName()` / `getPassword()`** - the standard `setUserName`/`setPassword` methods were never called. The Tuya SDK uses a custom certification info class (`SdkMqttCertificationInfo`) that provides credentials through getter methods.
 
 2. **Decompilation of `SdkMqttCertificationInfo`** (jadx) revealed:
    - Username is constructed from `partnerIdentity`, `appKey`, `chKey`, SID, and a hash suffix
    - Password comes from `doCommandNative(context, 2, ecode.getBytes(), null, debug)`, taking the middle 16 characters
 
-3. **Native cmd=2 reversal** (r2ghidra) showed the algorithm: two rounds of hashing with the signing key and ecode. Tested as `MD5(MD5(signing_key) + ecode)` → exact match.
+3. **Native cmd=2 reversal** (r2ghidra) showed the algorithm: two rounds of hashing with the signing key and ecode. Tested as `MD5(MD5(signing_key) + ecode)` -> exact match.
 
 #### MQTT Credential Formulas
 
@@ -997,35 +997,35 @@ Both transports accept the same credentials.
 All MQTT credentials are derived from values available in the login response (`sid`, `ecode`, `partnerIdentity`, `uid`) combined with the static signing key. No additional API calls or phone access needed after login.
 
 ```python
-# Complete MQTT connection — no phone, no web portal, no Frida
+# Complete MQTT connection - no phone, no web portal, no Frida
 client = mqtt.Client(client_id=mqtt_client_id)
 client.username_pw_set(mqtt_username, mqtt_password)
 client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
 client.connect("m1.tuyaeu.com", 8883)
-# → Connected successfully
+# -> Connected successfully
 ```
 
 ---
 
 ### 13. Phase 7: LAN Protocol & DPS Push Discovery
 
-#### Cloud MQTT — Dead End for DPS Push
+#### Cloud MQTT - Dead End for DPS Push
 
 After successfully reversing the MQTT credentials (Phase 6), we tested whether DPS status updates arrive on the mobile SDK's MQTT topic (`{partnerIdentity}/mb/{uid}`).
 
-**Result: No.** The Tuya cloud MQTT broker for mobile SDK connections is used **exclusively for WebRTC signaling** (protocol 302). DPS changes made via the REST API are not forwarded to the MQTT topic. We tested with three topic variants (`{partner}/mb/{uid}`, `/av/u/{uid}`, `smart/device/out/{devId}`) — all subscribed successfully but delivered zero DPS messages during controlled tests.
+**Result: No.** The Tuya cloud MQTT broker for mobile SDK connections is used **exclusively for WebRTC signaling** (protocol 302). DPS changes made via the REST API are not forwarded to the MQTT topic. We tested with three topic variants (`{partner}/mb/{uid}`, `/av/u/{uid}`, `smart/device/out/{devId}`) - all subscribed successfully but delivered zero DPS messages during controlled tests.
 
 The mobile app likely receives push notifications via Firebase Cloud Messaging, not MQTT.
 
-#### LAN Protocol — Working Real-Time Push
+#### LAN Protocol - Working Real-Time Push
 
 The device responds to the Tuya LAN protocol (version 3.3) on the local network. Discovery via UDP broadcast on ports 6666/6667 reveals the device at its LAN IP.
 
 **Connection sequence:**
-1. `tinytuya.deviceScan()` → finds device by `gwId` match
+1. `tinytuya.deviceScan()` -> finds device by `gwId` match
 2. Create `Device(device_id, ip, local_key, version=3.3)` with `localKey` from API discovery
-3. `set_socketPersistent(True)` + `updatedps([dps_list])` → primes the connection
-4. `receive()` in a loop → blocks until data arrives or socket timeout
+3. `set_socketPersistent(True)` + `updatedps([dps_list])` -> primes the connection
+4. `receive()` in a loop -> blocks until data arrives or socket timeout
 
 **DPS push behavior:**
 - After `updatedps()`, the device dumps its full current state
@@ -1042,7 +1042,7 @@ Controlled testing with motion and sound detection revealed the event DPS codes:
 | 250 | `"motion_detection"` | Motion detected by camera |
 | 141 | `"decibel_upload"` | Sound detected above threshold |
 
-**DPS 250** is the primary alert event channel. Motion events arrive on this DPS even when DPS 134 (motion switch) is set to `false` — the switch controls whether the app shows notifications, not whether the device detects motion.
+**DPS 250** is the primary alert event channel. Motion events arrive on this DPS even when DPS 134 (motion switch) is set to `false` - the switch controls whether the app shows notifications, not whether the device detects motion.
 
 **DPS 141** fires when the microphone picks up sound above the configured sensitivity threshold.
 
@@ -1052,14 +1052,14 @@ Both events arrive via LAN push with sub-second latency, making them suitable fo
 
 | DPS | Name | Type | Push via LAN? |
 |-----|------|------|---------------|
-| 207 | Temperature (°C × 100) | int | Yes |
-| 250 | Alert event | string | Yes — `"motion_detection"` |
-| 141 | Sound event | string | Yes — `"decibel_upload"` |
+| 207 | Temperature (°C x 100) | int | Yes |
+| 250 | Alert event | string | Yes - `"motion_detection"` |
+| 141 | Sound event | string | Yes - `"decibel_upload"` |
 | 138 | Night light | bool | Yes (initial state) |
 | 134 | Motion switch | bool | Yes (initial state) |
 | 139 | Sound switch | bool | Yes (initial state) |
 | 158 | Brightness | int | Yes (initial state) |
-| 246 | Lullaby state | string | Yes — `"playing"` / `"stopping"` |
+| 246 | Lullaby state | string | Yes - `"playing"` / `"stopping"` |
 | 101 | Unknown status | bool | Yes |
 | 209 | Volume | int | Initial state only |
 | 248 | Lullaby track info | JSON string | Initial state only |
@@ -1068,32 +1068,32 @@ Both events arrive via LAN push with sub-second latency, making them suitable fo
 
 ```
 Baby Monitor (LAN, 192.168.85.x)
-    │
-    ├── Tuya LAN protocol 3.3 ──► TuyaLANClient (lan.py)
-    │   Real-time push: temperature, motion, sound       ──► Coordinator
-    │                                                          │
-    └── Tuya Cloud API (a1.tuyaeu.com) ──► PhilipsAventAPI    │
-        Polling every 120s (fallback)                    ──► Coordinator
-                                                               │
+    |
+    +-- Tuya LAN protocol 3.3 --> TuyaLANClient (lan.py)
+    |   Real-time push: temperature, motion, sound       --> Coordinator
+    |                                                          |
+    +-- Tuya Cloud API (a1.tuyaeu.com) --> PhilipsAventAPI    |
+        Polling every 120s (fallback)                    --> Coordinator
+                                                               |
                                                           All HA entities
 ```
 
 ---
 
-### 14. Phase 8: Streaming Path — WebRTC Signaling and Media
+### 14. Phase 8: Streaming Path - WebRTC Signaling and Media
 
 *This phase was contributed by @leonardpitzu in [issue #51](https://github.com/thekoma/aventproxy/issues/51), from work on the sibling `aventlocal` project. The findings are reproduced here with light edits: section cross-references renumbered, and one note added where the capture and this project's working bridge disagree.*
 
 Authentication (sections 6 to 8) yields API access; this phase documents how the **video itself** is obtained. The camera streams over **WebRTC**, negotiated in two independent phases:
 
-1. **Signaling** — a short SDP **offer/answer + ICE-candidate** exchange. The official app carries it over the **Tuya cloud MQTT** broker. This is the only part that touches the internet.
-2. **Media** — once ICE picks a path, H.264 video flows **peer-to-peer over UDP**. The camera advertises a **direct-LAN host candidate** (e.g. `192.168.0.15:<port>`), so on the same LAN the media never leaves the network.
+1. **Signaling** - a short SDP **offer/answer + ICE-candidate** exchange. The official app carries it over the **Tuya cloud MQTT** broker. This is the only part that touches the internet.
+2. **Media** - once ICE picks a path, H.264 video flows **peer-to-peer over UDP**. The camera advertises a **direct-LAN host candidate** (e.g. `192.168.0.15:<port>`), so on the same LAN the media never leaves the network.
 
 #### Cloud signaling frame format
 
 ```
-publish  → /av/moto/<motoId>/u/<deviceId>      # offer + local ICE candidates → camera
-subscribe← /av/u/<uid>                          # answer + camera ICE candidates ← camera
+publish  -> /av/moto/<motoId>/u/<deviceId>      # offer + local ICE candidates -> camera
+subscribe<- /av/u/<uid>                          # answer + camera ICE candidates <- camera
 
 { "protocol": 302, "pv": "2.2", "t": <ms>,
   "data": {
@@ -1110,7 +1110,7 @@ subscribe topic the capture reads `msid`; the bridge subscribes with the account
 `msid` is a different derived string (see section 12), which suggests either the app uses one and
 we use the other, or the broker accepts both.
 
-`msg.token` is the **ICE-server list** (`rtc.config.get → p2p_config.ices`), not a string. `auth`, `motoId`, and the ICE servers all come from the `smartlife.m.rtc.config.get` call introduced in section 9.
+`msg.token` is the **ICE-server list** (`rtc.config.get -> p2p_config.ices`), not a string. `auth`, `motoId`, and the ICE servers all come from the `smartlife.m.rtc.config.get` call introduced in section 9.
 
 #### Two media modes
 
@@ -1135,7 +1135,7 @@ The reconnaissance note (section 3) that 554 carries "AES-encrypted RTSP" was te
 
 The streaming engine is the native P2P SDK (`libThingP2PSDK.so`, ARM64), pulled from the device and analyzed statically (`nm -D`, `strings`, `objdump`).
 
-**Media is off-the-shelf WebRTC — confirmed by symbols:**
+**Media is off-the-shelf WebRTC - confirmed by symbols:**
 - libsrtp: `srtp_protect`, `srtp_unprotect_aead`
 - mbedTLS DTLS: `mbedtls_ssl_*`, `mbedtls_x509write_crt_*`, `mbedtls_ctr_drbg_seed`
 - `imm_p2p_rtc_sdp_set_dtls_cert_fingerprint`, plus a full SDP builder API: `imm_p2p_rtc_sdp_{add_media,add_video_codec,add_audio_codec,add_candidate,set_aes_key,get_aes_key}`
@@ -1152,7 +1152,7 @@ This is decisive for the cloud path: the `webrtc` mode is genuine DTLS-SRTP that
 {"cmd":"retransmit_signaling","args":{"sessionid":"%s","remote_id":"%s","path":"%s"}}
 ```
 
-The cloud-vs-LAN selector inside the SDK is the integer **`lan_mode`** flag on `connect_v3`/`connect_v2`/`connect` — not the `header.path` string (the only `path` literals in the binary are `mqtt` and `relay`). Threads `create signaling lan thread` and `create signaling mqtt worker thread` confirm two distinct signaling transports behind one API.
+The cloud-vs-LAN selector inside the SDK is the integer **`lan_mode`** flag on `connect_v3`/`connect_v2`/`connect` - not the `header.path` string (the only `path` literals in the binary are `mqtt` and `relay`). Threads `create signaling lan thread` and `create signaling mqtt worker thread` confirm two distinct signaling transports behind one API.
 
 ### 16. Phase 10: The Local-Signaling Path (Zero-WAN)
 
@@ -1168,16 +1168,16 @@ All of it on **TCP 6668**, one connection:
 
 | # | Direction | Tuya seq | Cmd | Frame | Payload |
 |---|-----------|----------|-----|-------|---------|
-| 1 | app → cam | 1 | 3 | `SESS_KEY_NEG_START` | `local_nonce[16]` |
-| 2 | cam → app | — | 4 | `SESS_KEY_NEG_RESP` | `remote_nonce[16]` + `hmac[32]` |
-| 3 | app → cam | 2 | 5 | `SESS_KEY_NEG_FINISH` | `hmac_sha256(localKey, remote_nonce)` |
-| 4 | app → cam | 3 | 10 | `DP_QUERY` | primes the session |
-| 5 | cam → app | — | 10 | reply | ~616 B |
-| 6 | app → cam | 4 | 32 | `IPC_LAN_302` — `type: "offer"` | ~1633 B |
-| 7 | cam → app | — | 32 | `IPC_LAN_302` — ACK | 32 B |
-| 8 | cam → app | — | 32 | `IPC_LAN_302` — `type: "answer"` | ~1246 B |
-| 9 | both | 5…14 | 32 | `IPC_LAN_302` — `type: "candidate"` | trickle, both directions |
-| 10 | cam → app | — | 8 | `STATUS` | DPS pushes |
+| 1 | app -> cam | 1 | 3 | `SESS_KEY_NEG_START` | `local_nonce[16]` |
+| 2 | cam -> app | - | 4 | `SESS_KEY_NEG_RESP` | `remote_nonce[16]` + `hmac[32]` |
+| 3 | app -> cam | 2 | 5 | `SESS_KEY_NEG_FINISH` | `hmac_sha256(localKey, remote_nonce)` |
+| 4 | app -> cam | 3 | 10 | `DP_QUERY` | primes the session |
+| 5 | cam -> app | - | 10 | reply | ~616 B |
+| 6 | app -> cam | 4 | 32 | `IPC_LAN_302` - `type: "offer"` | ~1633 B |
+| 7 | cam -> app | - | 32 | `IPC_LAN_302` - ACK | 32 B |
+| 8 | cam -> app | - | 32 | `IPC_LAN_302` - `type: "answer"` | ~1246 B |
+| 9 | both | 5...14 | 32 | `IPC_LAN_302` - `type: "candidate"` | trickle, both directions |
+| 10 | cam -> app | - | 8 | `STATUS` | DPS pushes |
 
 **Offer shape** (values redacted):
 
@@ -1193,7 +1193,7 @@ All of it on **TCP 6668**, one connection:
 
 The answer is the same shape with `p2p_skill: 1123` and `type: "answer"`.
 
-`token` and `tcp_token` are present but pointed at cloud STUN/TURN and a `tcp4:...:1443` relay that were unreachable for the whole capture. ICE probed them, failed, and settled on the direct LAN host pair: media ran `cam:47154 → phone:50218`, 753 packets, no cloud involvement. So those blocks look carriable-but-ignorable rather than required. Whether the camera rejects an offer that omits them is untested.
+`token` and `tcp_token` are present but pointed at cloud STUN/TURN and a `tcp4:...:1443` relay that were unreachable for the whole capture. ICE probed them, failed, and settled on the direct LAN host pair: media ran `cam:47154 -> phone:50218`, 753 packets, no cloud involvement. So those blocks look carriable-but-ignorable rather than required. Whether the camera rejects an offer that omits them is untested.
 
 #### Correction: why the earlier frametype-32 attempt only got an ACK
 
@@ -1202,14 +1202,14 @@ The previous version of this section blamed `ThingSmartP2PSDK::SendMessageThroug
 The decompiled chain agrees, and there is no socket in `libThingP2PSDK.so` at all:
 
 ```
-SendMessageThroughLAN(devId, json, len)                      # native → Java, a JNI upcall
-  → P2PMQTTServiceManager.send302MessageThroughMqtt(byLan=true, devId, json)
-  → homeCamera.lan302Publish(devId, json, cb)
-  → ThingSmartDevice.lanControl(devId, json, FrameTypeEnum.IPC_LAN_302.type=32, cb)
-answer ← registerDeviceHardwareResponseListener(FrameTypeEnum.IPC_LAN_302.getType(), ...)
+SendMessageThroughLAN(devId, json, len)                      # native -> Java, a JNI upcall
+  -> P2PMQTTServiceManager.send302MessageThroughMqtt(byLan=true, devId, json)
+  -> homeCamera.lan302Publish(devId, json, cb)
+  -> ThingSmartDevice.lanControl(devId, json, FrameTypeEnum.IPC_LAN_302.type=32, cb)
+answer <- registerDeviceHardwareResponseListener(FrameTypeEnum.IPC_LAN_302.getType(), ...)
 ```
 
-The real reason the earlier attempt failed is simpler: **it published cold.** The camera answers only on a session that has been through `SESS_KEY_NEG 3 → 4 → 5` and then primed with `DP_QUERY(10)`. The 32-byte cmd-32 frames that test saw are exactly the ACK at step 7 above. It stopped one step short rather than being wrong about the frame type.
+The real reason the earlier attempt failed is simpler: **it published cold.** The camera answers only on a session that has been through `SESS_KEY_NEG 3 -> 4 -> 5` and then primed with `DP_QUERY(10)`. The 32-byte cmd-32 frames that test saw are exactly the ACK at step 7 above. It stopped one step short rather than being wrong about the frame type.
 
 #### What the local channel does not carry: alert events
 
@@ -1267,7 +1267,7 @@ points at Tuya's push-notification service. That has not been reverse engineered
 - **The camera fans cmd-32 frames out to every connected LAN client.** A Home Assistant box holding a tinytuya session was receiving copies of the answer and candidate frames and discarding them. If the integration ever wants the LAN signaling path, the traffic is already being handed to it. This is also the likely identity of the `Unexpected Payload from Device` frames behind [issue #62](https://github.com/thekoma/aventproxy/issues/62): real frames, on a session negotiated at a version that cannot read them.
 - **The camera announces `"version": "3.5"`** in its 6667 discovery broadcast (6699/GCM framing). `lan.py` built a 3.3 session and discarded the announcement until 2026.7.0-rc9, which tries the announced version and falls back to 3.3.
 - **A LAN signaling path would route around `smartlife.m.rtc.config.get` entirely.** That call is what fails with `PERMISSION_DENIED` on [issue #48](https://github.com/thekoma/aventproxy/issues/48) for an account whose session is otherwise fine, and it is also what ties streaming to the regional server holding the account.
-- **The 904 frames have a concrete mechanism.** The camera's `STATUS` pushes arrive as `{"protocol":4,"t":…,"data":{"dps":{…}}}` behind a **15-byte 3.5 version header**. A decoder that only knows 3.1 through 3.4 falls through to hex on them, and tinytuya constructed with `version=3.3` reports them as unparseable, which is exactly the `Unexpected Payload from Device` seen on #62.
+- **The 904 frames have a concrete mechanism.** The camera's `STATUS` pushes arrive as `{"protocol":4,"t":...,"data":{"dps":{...}}}` behind a **15-byte 3.5 version header**. A decoder that only knows 3.1 through 3.4 falls through to hex on them, and tinytuya constructed with `version=3.3` reports them as unparseable, which is exactly the `Unexpected Payload from Device` seen on #62.
 - **Local control is the user-facing prize, not local streaming.** With the camera's WAN cut, streaming kept working while control did not: the app reported the camera offline and switch changes never applied. A correctly negotiated local session should let `set_dps` keep working with no internet, which is a visible win independent of the signaling work.
 
 ### 17. Completed Architecture
@@ -1276,20 +1276,20 @@ With the streaming path mapped, the end-to-end local pipeline is:
 
 ```
 cloud login + smartlife.m.rtc.config.get   (one-time; motoId, auth, ICE servers, MQTT creds)
-        │
-        ▼
+        |
+        v
 pluggable signaling transport
-   ├─ CloudMqttSignaling   offer/answer over Tuya MQTT          ✅ implemented
-   └─ LanSignaling         offer/answer over the SDK LAN socket  🚧 pending the section 16 capture
-        │
-        ▼
-aiortc PeerConnection (DTLS-SRTP, H.264)  ← direct-LAN host ICE pair, media stays local
-        │
-        ▼
-RTSP re-publish (ffmpeg/go2rtc)  →  Home Assistant / VLC
+   +- CloudMqttSignaling   offer/answer over Tuya MQTT           implemented
+   +- LanSignaling         offer/answer over the SDK LAN socket   pending the section 16 capture
+        |
+        v
+aiortc PeerConnection (DTLS-SRTP, H.264)  <- direct-LAN host ICE pair, media stays local
+        |
+        v
+RTSP re-publish (ffmpeg/go2rtc)  ->  Home Assistant / VLC
 ```
 
-The reference implementation lives in the sibling `aventlocal` project; its `SignalingTransport` ABC is the seam that lets `LanSignaling` slot in behind the same interface once the section 16 capture is done, with the media→RTSP pipeline unchanged. Because login + `rtc.config.get` is the *only* remaining cloud touch, caching that config (or serving it locally) removes even that step — yielding true zero-internet operation.
+The reference implementation lives in the sibling `aventlocal` project; its `SignalingTransport` ABC is the seam that lets `LanSignaling` slot in behind the same interface once the section 16 capture is done, with the media->RTSP pipeline unchanged. Because login + `rtc.config.get` is the *only* remaining cloud touch, caching that config (or serving it locally) removes even that step - yielding true zero-internet operation.
 
 ---
 
@@ -1323,7 +1323,7 @@ This research targets personal devices owned by the researcher. No third-party s
 - **Capture on the access point, not on a neighbouring host.** The AP bridges station-to-station traffic locally, so phone-to-camera frames never reach a third party on the same subnet.
 - **`tinytuya.parse_header` rejects frames larger than `MAX_PAYLOAD_LENGTH`.** The offer is 1633 bytes and trips it, so a naive frame walker silently skips the single most interesting frame and the sequence numbers merely appear to jump from 3 to 5. Pass `header=` into `unpack_message` as well, which otherwise re-parses and re-applies the same ceiling.
 - **For 6699/GCM frames a wrong key does not raise.** `unpack_message` returns `crc_good=False`. Select the key by `crc_good`, not by catching exceptions.
-- **Camera→app frames carry a 4-byte retcode and app→camera frames do not.** So `local_nonce` sits at offset 0 in cmd 3 while `remote_nonce` sits at offset 4 in cmd 4. Get that wrong and you derive a plausible-looking session key that decrypts nothing. Self-test: `RESP[16:48] == hmac_sha256(localKey, local_nonce)`.
+- **Camera->app frames carry a 4-byte retcode and app->camera frames do not.** So `local_nonce` sits at offset 0 in cmd 3 while `remote_nonce` sits at offset 4 in cmd 4. Get that wrong and you derive a plausible-looking session key that decrypts nothing. Self-test: `RESP[16:48] == hmac_sha256(localKey, local_nonce)`.
 - **A working decoder lives in `tools/lan302_decode.py`.** It takes a pcap and a `localKey`, reassembles the TCP streams, replays the `SESS_KEY_NEG` exchange to recover the session key, and pretty-prints every frame with `IPC_LAN_302` flagged.
 - **Session key, the 3.5 derivation:** `AES(localKey).encrypt(xor(local_nonce, remote_nonce), pad=False, iv=local_nonce[:12])[12:28]`, with GCM AAD being frame bytes `[4:18]`.
 
@@ -1340,7 +1340,7 @@ This research targets personal devices owned by the researcher. No third-party s
 **1. Extract static keys (Docker, no phone):**
 ```bash
 docker run --rm -v /path/to/app.apk:/input/app.apk -v $(pwd):/output apk-key-extractor
-# → outputs: packageName, certSHA256, appKey, appSecret
+# -> outputs: packageName, certSHA256, appKey, appSecret
 ```
 
 **2. Extract embedded key (Frida, one-time):**
@@ -1355,10 +1355,10 @@ var key = "";
 for (var i = 0; i < len; i++) key += String.fromCharCode(ptr.add(i).readU8());
 console.log("SIGNING_KEY=" + key);
 '
-# → outputs: complete signing key (parse with underscore separators)
+# -> outputs: complete signing key (parse with underscore separators)
 ```
 
-**3. Login (Python, no phone — same flow as the vendor app):**
+**3. Login (Python, no phone - same flow as the vendor app):**
 ```python
 # Step 3a: Get RSA token
 token = call_api("thing.m.user.username.token.get", "2.0",
@@ -1369,12 +1369,12 @@ md5_pass = hashlib.md5(password.encode()).hexdigest()
 rsa_key = RSA.import_key(f"-----BEGIN PUBLIC KEY-----\n{token['pbKey']}\n-----END PUBLIC KEY-----")
 encrypted = PKCS1_v1_5.new(rsa_key).encrypt(md5_pass.encode()).hex()
 
-# Step 3c: Login attempt → triggers MFA
+# Step 3c: Login attempt -> triggers MFA
 call_api("thing.m.user.email.password.login", "3.0",
          {"countryCode": "39", "email": "user@example.com", "passwd": encrypted,
           "token": token["token"], "ifencrypt": 1,
           "options": '{"group": 1, "mfaCode": ""}'}, sid="")
-# → returns MFA_NEED_SEND_CODE
+# -> returns MFA_NEED_SEND_CODE
 
 # Step 3d: Request MFA code (needs fresh RSA token)
 token2 = call_api("thing.m.user.username.token.get", "2.0", ...)
@@ -1383,7 +1383,7 @@ call_api("thing.m.user.username.mfa.code.get", "1.0",
          {"countryCode": "39", "username": "user@example.com", "passwd": encrypted2,
           "token": token2["token"], "ifencrypt": 1,
           "options": '{"group": 1, "mfaCode": "null"}'}, sid="")
-# → server sends 6-digit code to email
+# -> server sends 6-digit code to email
 
 # Step 3e: Complete login with MFA code (needs fresh RSA token)
 token3 = call_api("thing.m.user.username.token.get", "2.0", ...)
@@ -1425,7 +1425,7 @@ client.connect("m1.tuyaeu.com", 8883)
 # Get WebRTC config
 rtc = call_api("smartlife.m.rtc.config.get", post_data={"devId": "camera_id"}, sid=sid)
 
-# WebRTC signaling via MQTT → RTP → RTSP bridge
+# WebRTC signaling via MQTT -> RTP -> RTSP bridge
 ```
 
 **6. Or use the bridge tool:**
@@ -1439,7 +1439,7 @@ rtc = call_api("smartlife.m.rtc.config.get", post_data={"devId": "camera_id"}, s
   --camera-name "MyCamera" \
   --port 8554
 
-# → rtsp://localhost:8554/MyCamera
+# -> rtsp://localhost:8554/MyCamera
 ```
 
 ---
@@ -1522,7 +1522,7 @@ User-Agent: Thing-UA=APP/Android/1.8.0/SDK/6.7.0
 | requestId | UUID | |
 | postData | JSON string | optional, for POST body |
 
-### Credentials (Example — extract your own)
+### Credentials (Example - extract your own)
 
 ```
 appKey:       <extract from BuildConfig.THING_SMART_APPKEY>
@@ -1530,7 +1530,7 @@ appSecret:    <extract from BuildConfig.THING_SMART_SECRET>
 embeddedKey:  <extract from assets/cers via Frida>
 certSHA256:   <extract via: keytool -printcert -jarfile app.apk>
 packageName:  <from AndroidManifest.xml>
-sid:          <from OTP login — see login flow below>
+sid:          <from OTP login - see login flow below>
 phoneDeviceId: <any unique string>
 chKey:        <extract from app traffic or Frida>
 ```
@@ -1556,7 +1556,7 @@ chKey:        <extract from app traffic or Frida>
 5. Identified native signing in `libthing_security.so` via `doCommandNative(cmd=1)`
 6. r2ghidra decompilation of `doCommandNative` and `computeDigest` revealed key stored at global `0x39070`
 7. Frida memory dump of the runtime global extracted the full signing key
-8. Verified with independent Python HMAC-SHA256 implementation — exact match
+8. Verified with independent Python HMAC-SHA256 implementation - exact match
 
 ## Acknowledgments
 
@@ -1566,7 +1566,7 @@ Upstream project: [thekoma/aventproxy](https://github.com/thekoma/aventproxy).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
 
 ## Disclaimer
 
