@@ -207,9 +207,6 @@ The signing algorithm is generic to every Tuya Thing SDK app; see [tools/apk-key
 
 `tools/lan302_decode.py` decodes a packet capture of the LAN control channel: give it a pcap and a `localKey` and it prints the whole session decrypted.
 
-## Reporting issues
-
-See [docs/reporting-issues.md](docs/reporting-issues.md) for how to produce a diagnostics dump.
 ## Protocol reference
 
 How the monitor's API and local protocol were reverse engineered, kept as a narrative so the dead ends stay visible alongside the results.
