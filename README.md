@@ -59,13 +59,20 @@ online. Restoring the WAN fixes it within a minute or so with no power cycle,
 and once it has connected the WAN can go away again and local streaming
 continues.
 
+A capture of a monitor booting with no route out shows what it wants: DNS for
+`m2.tuyaeu.com` and `a2.tuyaeu.com` every ten to twenty seconds, and nothing
+else. Once routed it pings `8.8.8.8` about once a second as a reachability
+check and holds an HTTPS session to the regional API host. No NTP, so whatever
+it needs, it is not the time.
+
 Two details of the monitor's protocol are worth knowing, because both fail
 silently:
 
 - Its ICE server list may not be empty, and every entry must be an **IP
   literal**. Given a hostname it tries to resolve it before gathering anything,
   so with no DNS it reports no candidates at all and hangs up. The bridge sends
-  a documentation address that is never contacted.
+  a documentation address, which the monitor does send a binding request to and
+  which never answers; gathering its host candidate does not depend on a reply.
 - It always takes the ICE controlling role and its STUN success responses carry
   no `MESSAGE-INTEGRITY`. A conformant agent answers 487 Role Conflict or
   discards the responses, which is why the connectivity checks are done in

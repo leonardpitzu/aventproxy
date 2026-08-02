@@ -34,6 +34,9 @@ func NewLanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lan",
 		Short: "Stream from a monitor over the local network, without the cloud",
+		// A monitor that will not answer is a result, not a usage mistake, so the
+		// flag list would only bury it.
+		SilenceUsage: true,
 		Long: `Connect to a monitor on the LAN and report what happens at every step:
 session negotiation, the protocol-302 offer, ICE, then the video itself.
 
