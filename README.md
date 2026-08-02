@@ -65,6 +65,20 @@ else. Once routed it pings `8.8.8.8` about once a second as a reachability
 check and holds an HTTPS session to the regional API host. No NTP, so whatever
 it needs, it is not the time. [PROTOCOL.md](PROTOCOL.md) has the capture.
 
+**A monitor cannot be run on a network with no internet at all.** The gate is
+not something that can be satisfied locally, and each layer was tested in turn.
+Answering the reachability probe is not enough: with echo replies permitted and
+nothing else, local signalling stayed dead. The name lookup is redirectable,
+since the monitor uses the resolver DHCP gave it, and pointed at a listener on
+the LAN it connects within seconds. It is the TLS session that ends the matter.
+The monitor offers a single cipher suite, `ECDHE_RSA_AES128_CBC_SHA256`, so it
+expects a server certificate, and a self-signed certificate carrying the right
+name is rejected with alert 48 `unknown_ca`. It validates the chain against a
+trust store held in firmware, which nothing on the LAN can sign for. The
+workable configuration is an allowlist of `m2.tuyaeu.com`, `a2.tuyaeu.com` and
+`h2.iot-dns.com`, the bootstrap resolver, with everything else from the monitor
+blocked. Once it is up the WAN can go away for as long as you like.
+
 Two details of the monitor's protocol are worth knowing, because both fail
 silently:
 
@@ -427,6 +441,11 @@ from the app. Password plus emailed MFA yields a `sid`;
 `smartlife.m.rtc.config.get` yields the ICE servers, the P2P password and the
 MQTT credentials; signalling then runs over Tuya MQTT and the media is ordinary
 WebRTC with DTLS-SRTP.
+
+The monitor's own cloud session is separate from this and cannot be stood in
+for. It resolves `h2.iot-dns.com` to find its regional endpoints, speaks TLS
+1.2 to `m2.tuyaeu.com` on 8883 offering one cipher suite, and validates the
+server certificate against a trust store in firmware.
 
 ### Credentials
 

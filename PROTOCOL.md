@@ -1311,6 +1311,91 @@ as a pair:
 ether host <mac> and not (src net 192.168.0.0/24 and dst net 192.168.0.0/24)
 ```
 
+### 21. Can the Monitor Run With No Internet At All? No.
+
+Section 20 ended with a proposal: answer the reachability probe locally and see
+whether that is the whole of the gate. It is not, and following the question
+down to its end produces a firm negative. On stock firmware this monitor cannot
+be brought up in a house that has no internet connection.
+
+**The reachability probe is not the gate.** With ICMP to `8.8.8.8` permitted
+and everything else to the outside blocked, the monitor's echo requests are
+answered and it does nothing with them:
+
+```
+12 requests > 8.8.8.8
+12 replies  < 8.8.8.8
+```
+
+The round-robin across `8.8.8.8`, `1.1.1.1` and `9.9.9.9` collapses to a single
+target as soon as one answers, which confirms the probe is a reachability test
+rather than traffic with a destination in mind. Local signalling stayed dead
+for three minutes afterwards, against the ninety seconds a real WAN takes.
+
+**The name lookup is locally satisfiable.** The monitor uses the resolver it
+was given by DHCP rather than a hardcoded one, so a gateway-level override for
+`m2.tuyaeu.com` is honoured. Pointed at a listener on the LAN it connects
+within seconds, which disposes of DNS as a possible blocker and puts the whole
+question on the transport.
+
+**What it sends is a narrow ClientHello.** One hundred and thirty bytes, TLS
+1.2 with no `supported_versions`, a single cipher suite alongside the
+renegotiation SCSV, and three extensions:
+
+```
+cipher suites   c027 ECDHE_RSA_AES128_CBC_SHA256, 00ff SCSV
+extensions      server_name = m2.tuyaeu.com
+                signature_algorithms, supported_groups
+```
+
+No ALPN and no session ticket. `ECDHE_RSA` settles an important point on its
+own: the monitor expects a server certificate, not a pre-shared key, so there
+is a certificate decision to be made and it is the device that makes it.
+
+**It makes that decision correctly.** Served a self-signed certificate whose
+subject and SAN both cover `m2.tuyaeu.com`, it rejects the handshake twice in a
+row:
+
+```
+15:21:52  CONNECT from 192.168.0.15   HANDSHAKE REJECTED: TLSV1_ALERT_UNKNOWN_CA
+15:22:43  CONNECT from 192.168.0.15   HANDSHAKE REJECTED: TLSV1_ALERT_UNKNOWN_CA
+```
+
+Alert 48 is `unknown_ca`. The monitor carries a trust store in firmware and
+validates the chain against it. No certificate that can be generated on the LAN
+will be accepted, because the missing ingredient is a signature from an
+authority the device already trusts, and that is not something a local setup
+can manufacture.
+
+**One endpoint that section 20 missed.** The same window shows a third name,
+resolved and contacted on 443:
+
+```
+DNS   h2.iot-dns.com,  m2.tuyaeu.com
+SYN   99.83.166.254:443   x6      h2.iot-dns.com, an AWS Global Accelerator address
+      <sink>:8883         x2
+```
+
+`h2.iot-dns.com` is Tuya's bootstrap resolver, the service a device asks where
+its regional endpoints live. It sits behind the same wall.
+
+**Verdict.** The cloud dependency is not a reachability check that can be
+spoofed, nor a name that can be redirected. It terminates in a TLS session the
+device authenticates, and authentication is the one layer a local emulator
+cannot forge. Local streaming remains genuinely local and survives arbitrary
+WAN outages once the monitor is up, but the boot requires the real cloud. The
+practical configuration is an allowlist of `m2.tuyaeu.com`, `a2.tuyaeu.com` and
+`h2.iot-dns.com`, with everything else from the monitor blocked.
+
+**What remains untested.** Embedded TLS clients frequently validate the chain
+and skip hostname verification. Alert 48 reports only that the chain failed, so
+it says nothing about whether a legitimately issued certificate for some other
+name would be objected to. If hostname checking is absent, a publicly trusted
+certificate would complete the handshake and expose the MQTT `CONNECT` that
+follows, which is where the device's own credentials live. That is the only
+remaining route to an offline monitor, and it needs a certificate from a public
+authority to test.
+
 ---
 
 *This document describes research conducted on personally-owned devices for interoperability purposes. All credentials shown are anonymized or redacted. The Tuya trademark belongs to Tuya Inc.*
