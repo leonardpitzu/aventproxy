@@ -63,7 +63,7 @@ A capture of a monitor booting with no route out shows what it wants: DNS for
 `m2.tuyaeu.com` and `a2.tuyaeu.com` every ten to twenty seconds, and nothing
 else. Once routed it pings `8.8.8.8` about once a second as a reachability
 check and holds an HTTPS session to the regional API host. No NTP, so whatever
-it needs, it is not the time.
+it needs, it is not the time. Section 20 has the capture.
 
 Two details of the monitor's protocol are worth knowing, because both fail
 silently:
@@ -1630,6 +1630,82 @@ rtc = call_api("smartlife.m.rtc.config.get", post_data={"devId": "camera_id"}, s
   --port 8554
 
 # -> rtsp://localhost:8554/MyCamera
+```
+
+---
+
+### 20. What the Monitor Needs the Cloud For
+
+Local streaming works with the WAN unplugged, but only if the monitor reached
+Tuya at some point since it booted. A monitor power-cycled while the WAN is
+down negotiates a 3.5 session, answers `DP_QUERY` with live DPS, and then
+ignores every protocol-302 offer without a word. This section is the capture
+that shows what it is waiting for.
+
+**Method.** `tcpdump` on the access point the monitor associates with, filtered
+to its MAC and to traffic leaving the subnet, plus DNS and NTP. Alongside it, a
+poller attempting a full local session every fifteen seconds, so the moment the
+monitor starts answering is timestamped against the capture.
+
+**Blocked, freshly booted.** The route out was removed rather than filtered, so
+`connect()` fails before anything reaches the wire:
+
+```
+16x  A? m2.tuyaeu.com     the MQTT broker
+ 5x  A? a2.tuyaeu.com     the API host
+tcp: 0    ntp: 0    icmp: 0
+```
+
+It resolves those two names every ten to twenty seconds and gets no further.
+Throughout, the LAN control channel is entirely healthy and the offers are
+dropped in silence.
+
+**Route restored.** Local signalling began answering about ninety seconds
+later, with no power cycle:
+
+```
+09:01:35  192.168.0.15 > 8.8.8.8: ICMP echo request     31 in 35s
+tcp -> 35.156.159.242:443                               64 packets, a2.tuyaeu.com
+port 8883                                               0 packets
+```
+
+**What this rules out.** No NTP in either state, and port 123 was captured
+explicitly. Whatever the monitor gains from the cloud, it is not the time,
+which was the more attractive of the two theories: session credentials are
+timestamped, and the device has no battery-backed clock.
+
+**What it points at.** The monitor pings `8.8.8.8` roughly once a second, which
+is a deliberate reachability probe rather than traffic with a purpose. That
+probe plus an HTTPS session to the regional API host is the whole of its cloud
+conversation in this window; the MQTT broker it resolved while blocked is never
+contacted on 8883. The most likely reading is that the P2P subsystem starts
+once the device believes it is online and has an API session, and that the
+local 302 handler belongs to that subsystem. Answering the probe locally would
+test it, and would be the first step towards a monitor that never needs the
+WAN at all.
+
+**Two corrections this capture produced.**
+
+The placeholder ICE server is contacted. The offer advertises `192.0.2.1:3478`,
+a documentation address that cannot answer, and the monitor sends it binding
+requests anyway:
+
+```
+192.168.0.15.37929 > 192.0.2.1.3478: UDP, length 56
+```
+
+It does not need a reply to gather its own host candidate, but "never
+contacted" was wrong.
+
+The obvious capture filter is also wrong. `not net 192.168.0.0/24` matches
+either endpoint, and the monitor is inside that subnet, so the expression
+excludes everything it sends. Every outbound TCP packet was silently dropped
+from the first capture; only a separate `port 53` clause preserved the DNS that
+made the run readable at all. The filter has to exclude subnet-internal traffic
+as a pair:
+
+```
+ether host <mac> and not (src net 192.168.0.0/24 and dst net 192.168.0.0/24)
 ```
 
 ---
