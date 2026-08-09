@@ -28,4 +28,7 @@ RUN apk add --no-cache ca-certificates
 COPY --from=builder /avent-webrtc-bridge /usr/local/bin/avent-webrtc-bridge
 COPY --chmod=0755 run.sh /
 
+# Bypass the base image's s6-overlay init: the Supervisor puts Docker's own init
+# at PID 1 (init defaults to true), and s6 refuses to run as anything else.
+ENTRYPOINT []
 CMD [ "/run.sh" ]
