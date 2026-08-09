@@ -1,0 +1,45 @@
+version: 2
+updates:
+  # Go bridge: pion moves fast and this is a network daemon on the LAN.
+  - package-ecosystem: gomod
+    directory: /avent-webrtc-bridge
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - automated
+
+  # Python (pip): the pinned linter in pyproject's dependency groups.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - automated
+
+  # Add-on image: the golang builder and the alpine runtime base.
+  - package-ecosystem: docker
+    directory: /aventproxy-bridge-addon
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - automated
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - automated
