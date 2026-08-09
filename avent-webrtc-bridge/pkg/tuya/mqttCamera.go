@@ -117,14 +117,6 @@ func (c *MQTTCameraClient) SendResolution(resolution int) error {
 	})
 }
 
-func (c *MQTTCameraClient) SendSpeaker(speaker int) error {
-	// Protocol 312 is used for speaker
-	return c.sendMqttMessage("speaker", 312, "", SpeakerFrame{
-		Mode:  "webrtc",
-		Value: speaker,
-	})
-}
-
 func (c *MQTTCameraClient) SendDisconnect() error {
 	return c.sendMqttMessage("disconnect", 302, "", DisconnectFrame{
 		Mode: "webrtc",

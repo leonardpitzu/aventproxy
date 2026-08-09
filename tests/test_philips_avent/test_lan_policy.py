@@ -1,6 +1,6 @@
 """Tests for the LAN keep-alive and reconnect policy (issue #62)."""
 
-from lan_policy import (
+from philips_avent.lan_policy import (
     DATA_TIMEOUT,
     HEARTBEAT_INTERVAL,
     LAN_ERR_CONNECT,

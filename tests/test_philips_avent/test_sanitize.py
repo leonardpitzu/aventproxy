@@ -1,4 +1,4 @@
-from const import DEFAULT_BRIDGE_HOST, build_rtsp_url, sanitize_rtsp_path
+from philips_avent.const import DEFAULT_BRIDGE_HOST, build_rtsp_url, sanitize_rtsp_path
 
 
 def test_simple_name():

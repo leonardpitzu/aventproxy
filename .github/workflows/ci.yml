@@ -25,9 +25,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: pip install ruff
+          cache: pip
+      # Pinned in pyproject: an unpinned ruff turns CI red on untouched code the
+      # day a new release adds a rule.
+      - run: pip install --group lint
       - name: Check for errors
-        run: ruff check custom_components/ tools/ --ignore E501
+        run: ruff check custom_components/ tools/ tests/
 
   tests:
     name: Tests
@@ -40,9 +43,9 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install test dependencies
-        run: pip install pytest pycryptodome aiohttp voluptuous
+        run: pip install --group test
       - name: Run tests
-        run: PYTHONPATH=. pytest tests/test_philips_avent/ -v --tb=short
+        run: pytest
 
   bridge:
     name: Bridge (Go)
@@ -65,10 +68,14 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+      - name: Vet
+        run: go vet ./...
       - name: Build
-        run: go build -o avent-webrtc-bridge .
+        run: go build -trimpath -ldflags="-s -w" -o avent-webrtc-bridge .
+      # The RTP forwarder fans one packet out to every viewer while sessions
+      # come and go, so the race detector is the point of this job.
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
       - name: Verify binary
         run: ./avent-webrtc-bridge --help
 
@@ -109,7 +116,10 @@ jobs:
         with:
           context: aventproxy-bridge-addon
           platforms: linux/amd64,linux/arm64
-          build-args: BUILD_FROM=debian:bookworm-slim
+          # The published image is what the Supervisor pulls, so the runtime
+          # base has to be multi-arch. build.yaml names the per-arch Home
+          # Assistant bases, which are this same alpine release.
+          build-args: BUILD_FROM=alpine:3.22
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/leonardpitzu/aventproxy-bridge:${{ steps.addon.outputs.version }}

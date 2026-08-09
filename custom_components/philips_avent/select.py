@@ -5,13 +5,11 @@ import json
 import logging
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
     DPS_LIGHT_TIMER,
     DPS_LIGHT_TIMER_SWITCH,
     DPS_LULLABY_CONTROL,
@@ -24,7 +22,7 @@ from .const import (
     TIMER_OPTIONS,
     TIMER_SECONDS_TO_LABEL,
 )
-from .coordinator import PhilipsAventCoordinator
+from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,11 +32,13 @@ PLAY_MODE_LABELS = {"loop": "Loop All", "loop1": "Repeat One", "shuffle": "Shuff
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: PhilipsAventConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
+    coordinators = entry.runtime_data.coordinators
     entities = []
-    for cam_id, coordinator in data["coordinators"].items():
+    for cam_id, coordinator in coordinators.items():
         entities.append(AventLullabySelect(coordinator, cam_id))
         entities.append(AventPlayModeSelect(coordinator, cam_id))
         entities.append(AventTimerSelect(

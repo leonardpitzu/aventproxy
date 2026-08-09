@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -e
 
 BRIDGE_CONFIG_GLOB="/config/philips_avent_bridge_*.json"
@@ -55,48 +55,29 @@ echo "Philips Avent WebRTC Bridge"
 echo "Config: $CONFIG_PATH"
 echo "=============================="
 
-# Supervise the bridge here rather than exiting the container when the config
-# changes. The old version killed this script and relied on the supervisor to
-# bring the add-on back; after two Home Assistant restarts in quick succession it
-# did not, and the add-on sat stopped with no video and nothing in the
-# integration log to explain it (issue #73).
+# Restart the bridge here rather than exiting the container on a crash. The old
+# version relied on the supervisor to bring the add-on back; after two Home
+# Assistant restarts in quick succession it did not, and the add-on sat stopped
+# with no video and nothing in the integration log to explain it (issue #73).
+# Config changes need no help from this loop: the bridge watches its own file.
 BRIDGE_PID=""
-
-shutdown() {
-    echo "Stopping bridge..."
-    if [ -n "$BRIDGE_PID" ]; then
-        kill "$BRIDGE_PID" 2>/dev/null
-        wait "$BRIDGE_PID" 2>/dev/null
-    fi
-    exit 0
-}
-trap shutdown TERM INT
+trap 'kill -TERM "$BRIDGE_PID" 2>/dev/null' TERM INT
 
 while true; do
-    CONFIG_HASH=$(md5sum "$CONFIG_PATH" 2>/dev/null | cut -d' ' -f1)
-
     avent-webrtc-bridge addon --config "$CONFIG_PATH" &
     BRIDGE_PID=$!
     echo "Bridge started (pid $BRIDGE_PID)"
 
-    RESTART_REASON=""
-    while kill -0 "$BRIDGE_PID" 2>/dev/null; do
-        sleep 10
-        NEW_HASH=$(md5sum "$CONFIG_PATH" 2>/dev/null | cut -d' ' -f1)
-        if [ -n "$NEW_HASH" ] && [ "$NEW_HASH" != "$CONFIG_HASH" ]; then
-            echo "Config changed, restarting bridge..."
-            RESTART_REASON="config"
-            kill "$BRIDGE_PID" 2>/dev/null
-            break
-        fi
-    done
-
-    wait "$BRIDGE_PID" 2>/dev/null
+    set +e
+    wait "$BRIDGE_PID"
     BRIDGE_EXIT=$?
-    BRIDGE_PID=""
+    set -e
 
-    if [ "$RESTART_REASON" != "config" ]; then
-        echo "Bridge exited with status $BRIDGE_EXIT, restarting in 5s..."
-        sleep 5
+    if [ "$BRIDGE_EXIT" -eq 0 ]; then
+        echo "Bridge shut down cleanly"
+        exit 0
     fi
+
+    echo "Bridge exited with status $BRIDGE_EXIT, restarting in 5s..."
+    sleep 5
 done

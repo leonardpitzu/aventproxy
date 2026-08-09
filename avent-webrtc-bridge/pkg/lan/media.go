@@ -11,8 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net"
-	"time"
 )
 
 // Application-layer constants for the media channel.
@@ -100,47 +98,6 @@ func open(key, data []byte) ([]byte, error) {
 	}
 	return out, nil
 }
-
-// macConn adapts an ICE connection to the datagram shape kcp expects, adding
-// and checking the trailing HMAC the monitor requires.
-//
-// Every datagram on this channel is a KCP segment followed by
-// HMAC-SHA1(aes-key, segment). Sending without it produces no reply at all.
-type macConn struct {
-	inner net.Conn
-	key   []byte
-	raddr net.Addr
-}
-
-func (m *macConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	buf := make([]byte, len(p)+macLen)
-	n, err := m.inner.Read(buf)
-	if err != nil {
-		return 0, m.raddr, err
-	}
-	if n < macLen {
-		return 0, m.raddr, errors.New("lan: datagram shorter than its MAC")
-	}
-	body := buf[:n-macLen]
-	if !hmac.Equal(mac(m.key, body), buf[n-macLen:n]) {
-		return 0, m.raddr, errors.New("lan: datagram MAC mismatch")
-	}
-	return copy(p, body), m.raddr, nil
-}
-
-func (m *macConn) WriteTo(p []byte, _ net.Addr) (int, error) {
-	out := append(append([]byte{}, p...), mac(m.key, p)...)
-	if _, err := m.inner.Write(out); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
-func (m *macConn) Close() error                       { return m.inner.Close() }
-func (m *macConn) LocalAddr() net.Addr                { return m.inner.LocalAddr() }
-func (m *macConn) SetDeadline(t time.Time) error      { return m.inner.SetDeadline(t) }
-func (m *macConn) SetReadDeadline(t time.Time) error  { return m.inner.SetReadDeadline(t) }
-func (m *macConn) SetWriteDeadline(t time.Time) error { return m.inner.SetWriteDeadline(t) }
 
 func mac(key, body []byte) []byte {
 	h := hmac.New(sha1.New, key)

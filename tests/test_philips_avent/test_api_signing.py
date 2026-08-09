@@ -2,10 +2,9 @@
 
 import hashlib
 
-
 # Import the signing internals
-from api import _sign, _swap, PhilipsAventAPI
-from const import TUYA_SIGNING_KEY, TUYA_APP_KEY
+from philips_avent.api import PhilipsAventAPI, _sign, _swap
+from philips_avent.const import TUYA_APP_KEY, TUYA_SIGNING_KEY
 
 
 class TestSwapSignString:

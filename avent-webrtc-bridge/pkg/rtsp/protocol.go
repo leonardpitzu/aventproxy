@@ -8,13 +8,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pion/rtp"
@@ -67,16 +68,7 @@ func sendRTSPResponse(conn net.Conn, statusCode int, status string, headers map[
 
 	responseStr := response.String()
 
-	fmt.Println()
-	core.Logger.Trace().Msgf("Sending RTSP response:")
-	re := regexp.MustCompile(`\r\n|\r|\n`)
-	lines := re.Split(responseStr, -1)
-	for _, line := range lines {
-		if line != "" {
-			fmt.Println(line)
-		}
-	}
-	fmt.Println()
+	core.Logger.Trace().Msgf("Sending RTSP response: %d %s", statusCode, status)
 
 	_, err := conn.Write([]byte(responseStr))
 	return err
@@ -125,7 +117,7 @@ func (s *RTSPServer) handleRTSPProtocol(client *RTSPClient) {
 		// Check for interleaved RTP (backchannel)
 		firstByte, err := client.reader.Peek(1)
 		if err != nil {
-			if client.stream.active && !strings.Contains(err.Error(), "connection reset by peer") {
+			if client.stream.active && !errors.Is(err, syscall.ECONNRESET) {
 				core.Logger.Error().Err(err).Msg("Error peeking connection")
 			}
 			break
@@ -143,13 +135,13 @@ func (s *RTSPServer) handleRTSPProtocol(client *RTSPClient) {
 		// Handle regular RTSP request
 		request, err := s.parseRTSPRequestFromReader(client.reader)
 		if err != nil {
-			if client.stream.active && !strings.Contains(err.Error(), "connection reset by peer") {
+			if client.stream.active && !errors.Is(err, syscall.ECONNRESET) {
 				core.Logger.Error().Err(err).Msg("Error parsing RTSP request")
 			}
 			break
 		}
 
-		if close := s.handleRTSPMethod(client, request); close == true {
+		if s.handleRTSPMethod(client, request) {
 			break
 		}
 	}
@@ -159,7 +151,7 @@ func (s *RTSPServer) handleInterleavedRTP(client *RTSPClient) error {
 	// Read interleaved header: $ + channel + length(2 bytes)
 	header := make([]byte, 4)
 	if _, err := io.ReadFull(client.reader, header); err != nil {
-		return fmt.Errorf("failed to read interleaved header: %v", err)
+		return fmt.Errorf("failed to read interleaved header: %w", err)
 	}
 
 	if header[0] != '$' {
@@ -172,7 +164,7 @@ func (s *RTSPServer) handleInterleavedRTP(client *RTSPClient) error {
 	// Read RTP data
 	data := make([]byte, length)
 	if _, err := io.ReadFull(client.reader, data); err != nil {
-		return fmt.Errorf("failed to read RTP data: %v", err)
+		return fmt.Errorf("failed to read RTP data: %w", err)
 	}
 
 	// Check if this is backchannel

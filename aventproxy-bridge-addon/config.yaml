@@ -7,7 +7,7 @@ url: "https://github.com/leonardpitzu/aventproxy"
 arch:
   - amd64
   - aarch64
-homeassistant: "2024.1.0"
+homeassistant: "2025.2.0"
 stage: stable
 host_network: true
 apparmor: true

@@ -288,10 +288,6 @@ func (c *MobileSDKClient) GetUserInfo() (*UserInfoResult, error) {
 	return &info, nil
 }
 
-func (c *MobileSDKClient) GetDeviceInfo(deviceID string) (json.RawMessage, error) {
-	return c.Call("tuya.m.device.get", "1.0", map[string]string{"devId": deviceID})
-}
-
 type UserInfoResult struct {
 	ID         string `json:"id"`
 	Email      string `json:"email"`

@@ -4,8 +4,8 @@ package webrtc
 
 import (
 	"net"
+	"slices"
 
-	"avent-webrtc-bridge/pkg/utils"
 	"avent-webrtc-bridge/pkg/xnet"
 
 	"github.com/pion/ice/v4"
@@ -57,7 +57,7 @@ func NewServerAPI(network, address string, filters *Filters) (*webrtc.API, error
 	var interfaceFilter func(name string) bool
 	if filters != nil && filters.Interfaces != nil {
 		interfaceFilter = func(name string) bool {
-			return utils.Contains(filters.Interfaces, name)
+			return slices.Contains(filters.Interfaces, name)
 		}
 	} else {
 		// default interfaces - all, except loopback
@@ -67,7 +67,7 @@ func NewServerAPI(network, address string, filters *Filters) (*webrtc.API, error
 	var ipFilter func(ip net.IP) bool
 	if filters != nil && filters.IPs != nil {
 		ipFilter = func(ip net.IP) bool {
-			return utils.Contains(filters.IPs, ip.String())
+			return slices.Contains(filters.IPs, ip.String())
 		}
 	} else {
 		// try filter all Docker-like interfaces
@@ -175,10 +175,10 @@ func RegisterDefaultCodecs(m *webrtc.MediaEngine) error {
 	}
 
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
-		{"goog-remb", ""},
-		{"ccm", "fir"},
-		{"nack", ""},
-		{"nack", "pli"},
+		{Type: "goog-remb"},
+		{Type: "ccm", Parameter: "fir"},
+		{Type: "nack"},
+		{Type: "nack", Parameter: "pli"},
 	}
 	for _, codec := range []webrtc.RTPCodecParameters{
 		{

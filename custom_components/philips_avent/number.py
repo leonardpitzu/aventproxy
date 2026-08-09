@@ -2,22 +2,23 @@
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, DPS_BRIGHTNESS, DPS_LULLABY_VOLUME
-from .coordinator import PhilipsAventCoordinator
+from .const import DPS_BRIGHTNESS, DPS_LULLABY_VOLUME
+from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: PhilipsAventConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
+    coordinators = entry.runtime_data.coordinators
     entities = []
-    for cam_id, coordinator in data["coordinators"].items():
+    for cam_id, coordinator in coordinators.items():
         entities.extend([
             AventNumber(coordinator, cam_id, DPS_BRIGHTNESS, "Night Light Brightness", "mdi:brightness-6", 1, 100, 1, "%"),
             AventNumber(coordinator, cam_id, DPS_LULLABY_VOLUME, "Lullaby Volume", "mdi:volume-medium", 1, 100, 1, "%"),

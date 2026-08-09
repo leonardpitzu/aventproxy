@@ -1,14 +1,15 @@
 """Philips Avent Baby Monitor integration for Home Assistant."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
 
-import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 
 from .api import PhilipsAventAPI
@@ -30,13 +31,21 @@ from .const import (
     TUYA_PACKAGE_NAME,
     TUYA_SIGNING_KEY,
 )
-from .coordinator import PhilipsAventCoordinator
+from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator, PhilipsAventData
 from .payload import BRIDGE_CONFIG_PREFIX, bridge_config_filename, build_bridge_config, orphan_bridge_configs
 from .region import DEFAULT_DATA_CENTER, api_host, api_url_for_host
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.CAMERA, Platform.SENSOR, Platform.SWITCH, Platform.NUMBER, Platform.BUTTON, Platform.SELECT, Platform.BINARY_SENSOR]
+PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.CAMERA,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 # tinytuya's scan retries the broadcast several times before it resolves an
 # address, so the bridge cannot be told about it during setup.
@@ -168,11 +177,40 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def _setup_camera(
+    hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cam: dict
+) -> tuple[str, PhilipsAventCoordinator]:
+    """Bring one camera online and return it keyed by device id.
+
+    Cameras are set up concurrently, so everything here has to be per-camera:
+    the only shared state it touches is the camera dict it was handed.
+    """
+    cam_id = cam.get("deviceId") or cam.get("devId")
+    cam_name = cam.get("deviceName") or cam.get("name", cam_id)
+    local_key = cam.get("localKey")
+
+    coordinator = PhilipsAventCoordinator(hass, entry, api, cam_id, cam_name, local_key=local_key)
+    await coordinator.async_config_entry_first_refresh()
+
+    if not local_key:
+        local_key = coordinator.device_info.get("localKey")
+        if local_key:
+            coordinator.set_local_key(local_key)
+
+    # The first poll already carries the local key, so keep it on the camera
+    # dict for the bridge config rather than paying a second call.
+    cam["localKey"] = local_key or ""
+    if not cam.get("password"):
+        cam["password"] = await _lan_password(api, cam_id)
+
+    await coordinator.start_lan()
+    return cam_id, coordinator
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry) -> bool:
     """Set up Philips Avent from a config entry."""
-    session = aiohttp.ClientSession()
     api = PhilipsAventAPI(
-        session,
+        async_get_clientsession(hass),
         sid=entry.data[CONF_SID],
         api_url=api_url_for_host(_entry_api_host(entry)),
         country_code=entry.data.get(CONF_COUNTRY_CODE) or TUYA_DEFAULT_COUNTRY_CODE,
@@ -248,40 +286,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if not cameras:
         _LOGGER.error("No cameras found. Reconfigure the integration to re-discover.")
-        await session.close()
         return False
 
-    coordinators = {}
-    for cam in cameras:
-        cam_id = cam.get("deviceId") or cam.get("devId")
-        cam_name = cam.get("deviceName") or cam.get("name", cam_id)
-        local_key = cam.get("localKey")
-
-        coordinator = PhilipsAventCoordinator(hass, api, cam_id, cam_name, local_key=local_key)
-        await coordinator.async_config_entry_first_refresh()
-
-        if not local_key:
-            local_key = coordinator.device_info.get("localKey")
-            if local_key:
-                coordinator._local_key = local_key
-
-        # The first poll already carries the local key, so keep it on the camera
-        # dict for the bridge config rather than paying a second call.
-        cam["localKey"] = local_key or ""
-        if not cam.get("password"):
-            cam["password"] = await _lan_password(api, cam_id)
-
-        await coordinator.start_lan()
-        coordinators[cam_id] = coordinator
+    coordinators = dict(
+        await asyncio.gather(*(_setup_camera(hass, entry, api, cam) for cam in cameras))
+    )
 
     _persist_lan_secrets(hass, entry, cameras)
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "api": api,
-        "session": session,
-        "coordinators": coordinators,
-        "config": entry.data,
-    }
+    entry.runtime_data = PhilipsAventData(api=api, coordinators=coordinators)
 
     await _write_bridge_config(hass, entry, api, cameras)
 
@@ -312,15 +325,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        data = hass.data[DOMAIN].pop(entry.entry_id)
-        for coordinator in data["coordinators"].values():
-            await coordinator.stop_lan()
-        await data["session"].close()
+        await asyncio.gather(
+            *(c.stop_lan() for c in entry.runtime_data.coordinators.values())
+        )
 
     return unload_ok
 

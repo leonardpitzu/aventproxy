@@ -1,7 +1,9 @@
 """Tests for Tuya data-center routing (issues #44, #58)."""
 
-import region
-from region import (
+from typing import ClassVar
+
+from philips_avent import region
+from philips_avent.region import (
     COUNTRY_ROUTING,
     DATA_CENTER_HOSTS,
     DEFAULT_DATA_CENTER,
@@ -150,7 +152,7 @@ class TestWrongDataCenterDetection:
 
 
 class TestDomainBlock:
-    LOGIN_DOMAIN = {
+    LOGIN_DOMAIN: ClassVar[dict] = {
         "mobileApiUrl": "a1.tuyaeu.com",
         "mobileMqttsUrl": "m1.tuyaeu.com",
         "regionCode": "EU",

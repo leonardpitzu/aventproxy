@@ -69,7 +69,3 @@ func initConfig() {
 	addon.SetStorageManager(storageManager)
 	lancmd.SetStorageManager(storageManager)
 }
-
-func GetStorageManager() *storage.StorageManager {
-	return storageManager
-}

@@ -6,26 +6,27 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, DPS_TEMPERATURE
-from .coordinator import PhilipsAventCoordinator
+from .const import DPS_TEMPERATURE
+from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: PhilipsAventConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
+    coordinators = entry.runtime_data.coordinators
     entities = []
-    for cam_id, coordinator in data["coordinators"].items():
+    for cam_id, coordinator in coordinators.items():
         entities.append(AventTemperatureSensor(coordinator, cam_id))
         entities.append(AventWifiSignalSensor(coordinator, cam_id))
     async_add_entities(entities)

@@ -4,16 +4,18 @@ from __future__ import annotations
 import contextlib
 import logging
 import time
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util.dt import utcnow
 
-from .api import PhilipsAventAPI, TuyaAPIError
+from .api import PhilipsAventAPI, TuyaAPIError, is_auth_error
 from .const import DPS_ALARM_RECORD, DPS_LULLABY_CONTROL, DPS_LULLABY_STATE
 from .events import LULLABY_SETTLE_SECONDS, lullaby_state_settled, poll_should_stay_fast
 from .lan import TuyaLANClient
@@ -31,12 +33,24 @@ POLL_SLOW = timedelta(seconds=120)
 RSSI_INTERVAL = timedelta(minutes=5)
 
 
-class PhilipsAventCoordinator(DataUpdateCoordinator):
+@dataclass
+class PhilipsAventData:
+    """What a set-up config entry hands to its platforms."""
+
+    api: PhilipsAventAPI
+    coordinators: dict[str, PhilipsAventCoordinator]
+
+
+type PhilipsAventConfigEntry = ConfigEntry[PhilipsAventData]
+
+
+class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Polls camera DPS values, with optional LAN push for real-time updates."""
 
     def __init__(
         self,
         hass: HomeAssistant,
+        entry: ConfigEntry,
         api: PhilipsAventAPI,
         camera_id: str,
         camera_name: str,
@@ -45,6 +59,7 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=f"Philips Avent {camera_name}",
             update_interval=POLL_FAST,
         )
@@ -72,6 +87,10 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
             self._on_lan_dps_update,
         )
         await self._lan_client.start()
+
+    def set_local_key(self, local_key: str) -> None:
+        """Adopt a local key learned after construction, before the LAN starts."""
+        self._local_key = local_key
 
     async def stop_lan(self) -> None:
         self._cancel_pending_lullaby()
@@ -225,6 +244,6 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
                 return {**self.data, **api_dps}
             return api_dps
         except TuyaAPIError as err:
-            if "SID_INVALID" in str(err) or "USER_SESSION_LOSS" in str(err):
+            if is_auth_error(err):
                 raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
             raise UpdateFailed(f"Error fetching data: {err}") from err

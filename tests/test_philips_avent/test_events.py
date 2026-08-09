@@ -8,10 +8,10 @@ one from #61 (SCD951, motion sensor never fired) and the sound one from #42
 import base64
 import json
 
-from events import (
+from philips_avent.events import (
     EVENT_MAX_AGE_SECONDS,
-    LULLABY_SETTLE_SECONDS,
     KNOWN_COMMANDS,
+    LULLABY_SETTLE_SECONDS,
     decode_event_payload,
     event_timestamp,
     is_new_event,
@@ -196,7 +196,7 @@ class TestUnmappedCommands:
     def test_unmapped_command_is_logged_once(self, caplog):
         import logging
 
-        import events
+        from philips_avent import events
 
         events._seen_unknown_commands.clear()
         with caplog.at_level(logging.WARNING):
@@ -208,7 +208,7 @@ class TestUnmappedCommands:
     def test_known_commands_are_not_logged(self, caplog):
         import logging
 
-        import events
+        from philips_avent import events
 
         events._seen_unknown_commands.clear()
         with caplog.at_level(logging.WARNING):

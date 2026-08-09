@@ -9,9 +9,9 @@ country code actually sent.
 import asyncio
 import json
 
-from api import PhilipsAventAPI, new_device_id
-from const import TUYA_API_URL, TUYA_DEFAULT_COUNTRY_CODE
-from region import api_url
+from philips_avent.api import PhilipsAventAPI, new_device_id
+from philips_avent.const import TUYA_API_URL, TUYA_DEFAULT_COUNTRY_CODE
+from philips_avent.region import api_url
 
 
 class FakeResponse:

@@ -4,16 +4,15 @@ Imports the real ``build_cameras_payload`` so a contract drift (e.g. someone
 changing it to omit product_id) is caught here, not just in the Go integration
 tests.
 
-The import below uses the leaf form ``from payload import ...`` to match the
-project convention (see ``conftest.py``): the full path
-``custom_components.philips_avent.payload`` cannot be used because it triggers
-``custom_components/philips_avent/__init__.py``, which imports ``homeassistant``
-— a runtime dependency we deliberately keep out of unit tests.
+``conftest.py`` registers ``philips_avent`` as a stub package, so importing
+``philips_avent.payload`` never runs the integration's ``__init__.py`` and these
+tests stay free of a ``homeassistant`` dependency.
 """
 
 import json
+from typing import ClassVar
 
-from payload import (
+from philips_avent.payload import (
     bridge_config_filename,
     build_bridge_config,
     build_cameras_payload,
@@ -101,7 +100,7 @@ class TestBuildCamerasPayloadPrecedence:
 class TestBuildBridgeConfig:
     """The JSON contract with ``cmd/addon/addon.go::BridgeConfig``."""
 
-    BASE = {
+    BASE: ClassVar[dict] = {
         "signing_key": "sk",
         "sid": "az1661958",
         "ecode": "E",
@@ -230,7 +229,7 @@ class TestDpsDelta:
 class TestTalkbackOption:
     """Two-way audio must be opt-in (issue #72)."""
 
-    BASE = {
+    BASE: ClassVar[dict] = {
         "signing_key": "sk", "sid": "eu166", "ecode": "E", "partner": "P",
         "app_key": "AK", "device_id": "D", "package_name": "pkg",
         "api_host": "a1.tuyaeu.com", "bridge_port": 38554,

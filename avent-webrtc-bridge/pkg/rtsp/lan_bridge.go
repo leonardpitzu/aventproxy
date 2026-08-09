@@ -146,13 +146,6 @@ func (lb *LANBridge) Stop() {
 	lb.connected = false
 }
 
-// IsConnected reports whether video is flowing.
-func (lb *LANBridge) IsConnected() bool {
-	lb.mu.Lock()
-	defer lb.mu.Unlock()
-	return lb.connected
-}
-
 func randomSSRC() uint32 {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {

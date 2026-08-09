@@ -8,21 +8,19 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
     DPS_ALARM_RECORD,
     DPS_ALERT_EVENT,
     DPS_DECIBEL_EVENT,
     DPS_LULLABY_STATE,
     DPS_MOTION_SWITCH,
 )
-from .coordinator import PhilipsAventCoordinator
+from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
 from .events import is_new_event, motion_event_timestamp, sound_event_timestamp
 
@@ -32,11 +30,13 @@ ALERT_CLEAR_SECONDS = 30
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: PhilipsAventConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
+    coordinators = entry.runtime_data.coordinators
     entities = []
-    for cam_id, coordinator in data["coordinators"].items():
+    for cam_id, coordinator in coordinators.items():
         entities.extend([
             AventLullabyPlaying(coordinator, cam_id),
             AventMotionDetected(coordinator, cam_id),

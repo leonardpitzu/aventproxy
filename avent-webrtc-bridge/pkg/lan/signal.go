@@ -195,14 +195,6 @@ func (o *Offer) SendCandidate(s *Session, candidate string) error {
 	})
 }
 
-// SendDisconnect tells the monitor we are finished.
-func (o *Offer) SendDisconnect(s *Session) error {
-	return sendSignal(s, o.IV, SignalFrame{
-		Header: o.header(TypeDisconnect),
-		Msg:    SignalMessage{Token: []ICEServer{}},
-	})
-}
-
 func sendSignal(s *Session, iv []byte, frame SignalFrame) error {
 	body, err := json.Marshal(frame)
 	if err != nil {

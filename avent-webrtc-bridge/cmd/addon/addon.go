@@ -1,6 +1,7 @@
 package addon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,6 +18,12 @@ import (
 	"avent-webrtc-bridge/pkg/tuya"
 	"avent-webrtc-bridge/pkg/utils"
 )
+
+// configPollInterval is how often the bridge notices that the integration has
+// rewritten its config. The file lives on the shared /config mount and is
+// replaced rather than edited, so a stat is enough and inotify would only add
+// a dependency.
+const configPollInterval = 5 * time.Second
 
 // BridgeConfig is the JSON shape written by the HA integration
 // in custom_components/philips_avent/__init__.py::_write_bridge_config.
@@ -173,12 +180,27 @@ Example:
 func runAddon(cmd *cobra.Command, args []string) error {
 	cfgPath, _ := cmd.Flags().GetString("config")
 
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		restart, err := serveOnce(cfgPath, sig)
+		if err != nil || !restart {
+			return err
+		}
+		core.Logger.Info().Msg("Bridge config changed, restarting the stream server")
+	}
+}
+
+// serveOnce serves every camera in the config until a shutdown signal arrives
+// or the config file changes, and reports whether the caller should start over.
+func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := validateConfig(cfg); err != nil {
-		return fmt.Errorf("invalid config %s: %w", cfgPath, err)
+		return false, fmt.Errorf("invalid config %s: %w", cfgPath, err)
 	}
 
 	port := cfg.BridgePort
@@ -196,13 +218,13 @@ func runAddon(cmd *cobra.Command, args []string) error {
 	core.Logger.Info().Msgf("Tuya API host: %s", apiHost)
 	core.Logger.Info().Msg("Verifying API access...")
 	if _, err := client.Call("smartlife.p.time.get", "1.0", nil); err != nil {
-		return fmt.Errorf("API verification failed: %w", err)
+		return false, fmt.Errorf("API verification failed: %w", err)
 	}
 	core.Logger.Info().Msg("API access OK")
 
 	userInfo, err := client.GetUserInfo()
 	if err != nil {
-		return fmt.Errorf("get user info: %w", err)
+		return false, fmt.Errorf("get user info: %w", err)
 	}
 	core.Logger.Info().Msgf("User: %s (%s)", userInfo.Nickname, utils.MaskEmail(userInfo.Email))
 	client.UID = userInfo.ID
@@ -231,7 +253,7 @@ func runAddon(cmd *cobra.Command, args []string) error {
 
 	camsWithPath := assignPaths(cfg.Cameras)
 	if len(camsWithPath) == 0 {
-		return fmt.Errorf("no valid cameras after filtering, refusing to start")
+		return false, fmt.Errorf("no valid cameras after filtering, refusing to start")
 	}
 
 	infos := make([]storage.CameraInfo, 0, len(camsWithPath))
@@ -261,15 +283,57 @@ func runAddon(cmd *cobra.Command, args []string) error {
 		core.Logger.Info().Msg("Two-way audio enabled: streams will ask the camera for talkback")
 	}
 	if err := server.Start(); err != nil {
-		return fmt.Errorf("start RTSP server: %w", err)
+		return false, fmt.Errorf("start RTSP server: %w", err)
 	}
 	core.Logger.Info().Msgf("Serving %d cameras on port %d: %s", len(infos), port, strings.Join(pathLog, " "))
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	watchCtx, stopWatch := context.WithCancel(context.Background())
+	defer stopWatch()
+
+	var restart bool
+	select {
+	case <-sig:
+	case <-watchConfigFile(watchCtx, cfgPath):
+		restart = true
+	}
 
 	core.Logger.Info().Msg("Shutting down...")
 	server.Stop()
-	return nil
+	return restart, nil
+}
+
+// watchConfigFile closes the returned channel once the config file on disk is
+// no longer the one that was loaded.
+func watchConfigFile(ctx context.Context, path string) <-chan struct{} {
+	changed := make(chan struct{})
+
+	go func() {
+		defer close(changed)
+
+		loaded, err := os.Stat(path)
+		if err != nil {
+			<-ctx.Done()
+			return
+		}
+
+		ticker := time.NewTicker(configPollInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				now, err := os.Stat(path)
+				if err != nil {
+					continue
+				}
+				if !now.ModTime().Equal(loaded.ModTime()) || now.Size() != loaded.Size() {
+					return
+				}
+			}
+		}
+	}()
+
+	return changed
 }

@@ -17,15 +17,6 @@ type Waiter struct {
 	err   error
 }
 
-func (w *Waiter) Add(delta int) {
-	w.mu.Lock()
-	if w.state >= 0 {
-		w.state += delta
-		w.WaitGroup.Add(delta)
-	}
-	w.mu.Unlock()
-}
-
 func (w *Waiter) Wait() error {
 	w.mu.Lock()
 	// first wait auto start waiter
@@ -56,21 +47,4 @@ func (w *Waiter) Done(err error) {
 	}
 
 	w.mu.Unlock()
-}
-
-func (w *Waiter) WaitChan() <-chan error {
-	var ch chan error
-
-	w.mu.Lock()
-
-	if w.state >= 0 {
-		ch = make(chan error)
-		go func() {
-			ch <- w.Wait()
-		}()
-	}
-
-	w.mu.Unlock()
-
-	return ch
 }

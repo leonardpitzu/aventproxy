@@ -1,10 +1,7 @@
 """Shared entity helpers for Philips Avent platforms."""
 from __future__ import annotations
 
-try:
-    from .const import DEFAULT_MODEL, DOMAIN, PRODUCT_ID_TO_MODEL
-except ImportError:  # loaded standalone by unit tests, without the HA package
-    from const import DEFAULT_MODEL, DOMAIN, PRODUCT_ID_TO_MODEL
+from .const import DEFAULT_MODEL, DOMAIN, PRODUCT_ID_TO_MODEL
 
 
 def build_device_info(coordinator, cam_id: str) -> dict:

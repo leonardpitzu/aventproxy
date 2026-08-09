@@ -107,12 +107,12 @@ class TestTuyaLANClientUnit:
 
     def test_lan_sequence_changes_for_equal_sound_payloads(self):
         """Equal DPS 141 payloads are distinct when received separately."""
-        sequence = 0
         last_seen = 0
         detected = 0
 
-        for payload in ({"141": "decibel_upload"}, {"141": "decibel_upload"}):
-            sequence += 1
+        for sequence, payload in enumerate(
+            ({"141": "decibel_upload"}, {"141": "decibel_upload"}), start=1
+        ):
             if sequence != last_seen:
                 last_seen = sequence
                 detected += payload.get("141") == "decibel_upload"

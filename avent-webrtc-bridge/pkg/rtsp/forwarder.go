@@ -1,13 +1,15 @@
 package rtsp
 
 import (
-	"avent-webrtc-bridge/pkg/core"
-	"avent-webrtc-bridge/pkg/utils"
+	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"avent-webrtc-bridge/pkg/core"
+	"avent-webrtc-bridge/pkg/utils"
 
 	"github.com/pion/rtp"
 )
@@ -20,29 +22,65 @@ const (
 	TransportTCP               // Interleaved
 )
 
+// interleaveHeaderLen is the `$`, channel and 16-bit length that prefix an RTP
+// packet on a TCP-interleaved connection. Packets are marshalled at this offset
+// so the header and the payload go out in a single write.
+const interleaveHeaderLen = 4
+
+// direction selects which of a client's transports a packet belongs to.
+type direction int
+
+const (
+	videoChannel direction = iota
+	audioChannel
+)
+
+func (d direction) String() string {
+	if d == videoChannel {
+		return "video"
+	}
+	return "audio"
+}
+
+func (d direction) conn(c *RTPClient) *net.UDPConn {
+	if d == videoChannel {
+		return c.videoConn
+	}
+	return c.audioConn
+}
+
+func (d direction) channel(c *RTPClient) byte {
+	if d == videoChannel {
+		return c.videoRTPChannel
+	}
+	return c.audioRTPChannel
+}
+
+// streamState holds everything one direction of the stream mutates per packet.
+// Video and audio arrive on separate goroutines, so each gets its own lock and
+// its own scratch buffer rather than contending on one forwarder-wide mutex.
+type streamState struct {
+	mu        sync.Mutex
+	clockRate uint64
+
+	timeStart time.Time
+	started   bool
+	logged    bool
+
+	// H264 parameter sets, replayed ahead of a keyframe for late joiners.
+	sps *rtp.Packet
+	pps *rtp.Packet
+
+	buf      []byte
+	snapshot []*RTPClient
+}
+
 type RTPForwarder struct {
-	clients map[string]*RTPClient
 	mutex   sync.RWMutex
+	clients map[string]*RTPClient
 
-	// RTP session info
-	videoSSRC uint32
-	audioSSRC uint32
-
-	// Packet count
-	firstVideoPacket bool
-	firstAudioPacket bool
-
-	// H264 SPS/PPS cache for parameter set injection
-	spsPacket *rtp.Packet
-	ppsPacket *rtp.Packet
-
-	// Timestamp rebasing
-	videoTimeStart time.Time
-	videoSeqStart  uint16
-	videoTsStarted bool
-	audioTimeStart time.Time
-	audioSeqStart  uint16
-	audioTsStarted bool
+	video streamState
+	audio streamState
 
 	OnBackchannelAudio func(*rtp.Packet)
 }
@@ -55,66 +93,53 @@ type RTPClient struct {
 	videoConn *net.UDPConn // For sending video to client
 	audioConn *net.UDPConn // For sending audio to client
 
-	// UDP transport - Client addresses
-	videoAddr *net.UDPAddr
-	audioAddr *net.UDPAddr
-
 	// UDP transport - Client ports
-	videoRTPPort          int // Client's video receiving port
-	audioRTPPort          int // Client's audio receiving port
-	backchannelClientPort int // Client's backchannel sending port
+	videoRTPPort int // Client's video receiving port
+	audioRTPPort int // Client's audio receiving port
 
 	// UDP backchannel listeners (server side)
 	backchannelListener     *net.UDPConn // Server's RTP listener for backchannel
 	backchannelRTCPListener *net.UDPConn // Server's RTCP listener for backchannel
 	backchannelServerPort   int          // Server's RTP listening port
-	backchannelRTCPPort     int          // Server's RTCP listening port
 
 	// TCP interleaved transport
 	tcpConn             net.Conn
 	videoRTPChannel     byte
 	audioRTPChannel     byte
 	backAudioRTPChannel byte
-
-	lastActivity time.Time
 }
 
 func NewRTPForwarder() *RTPForwarder {
 	return &RTPForwarder{
-		clients:          make(map[string]*RTPClient),
-		videoSSRC:        0, // Default SSRC for video
-		audioSSRC:        1, // Default SSRC for audio
-		firstVideoPacket: true,
-		firstAudioPacket: true,
+		clients: make(map[string]*RTPClient),
+		video:   streamState{clockRate: 90000},
+		audio:   streamState{clockRate: 8000},
 	}
+}
+
+func dialLocalUDP(port int) (*net.UDPConn, error) {
+	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		return nil, err
+	}
+	return net.DialUDP("udp", nil, addr)
 }
 
 func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPort int) error {
 	rf.mutex.Lock()
 	defer rf.mutex.Unlock()
 
-	// Check if client already exists
+	// Existing client: only fill in transports it does not have yet.
 	if client, exists := rf.clients[sessionID]; exists {
-		// Update existing client with new ports
 		client.videoRTPPort = videoRTPPort
 		client.audioRTPPort = audioRTPPort
-		client.lastActivity = time.Now()
 
-		// Create new connections if needed
 		if videoRTPPort > 0 && client.videoConn == nil {
-			videoAddr, _ := net.ResolveUDPAddr("udp", fmt.Sprintf("localhost:%d", videoRTPPort))
-			videoConn, _ := net.DialUDP("udp", nil, videoAddr)
-			client.videoAddr = videoAddr
-			client.videoConn = videoConn
+			client.videoConn, _ = dialLocalUDP(videoRTPPort)
 		}
-
 		if audioRTPPort > 0 && client.audioConn == nil {
-			audioAddr, _ := net.ResolveUDPAddr("udp", fmt.Sprintf("localhost:%d", audioRTPPort))
-			audioConn, _ := net.DialUDP("udp", nil, audioAddr)
-			client.audioAddr = audioAddr
-			client.audioConn = audioConn
+			client.audioConn, _ = dialLocalUDP(audioRTPPort)
 		}
-
 		return nil
 	}
 
@@ -123,45 +148,23 @@ func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPor
 		transportMode: TransportUDP,
 		videoRTPPort:  videoRTPPort,
 		audioRTPPort:  audioRTPPort,
-		lastActivity:  time.Now(),
 	}
 
-	// Create video connection if port provided
 	if videoRTPPort > 0 {
-		videoAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("localhost:%d", videoRTPPort))
+		conn, err := dialLocalUDP(videoRTPPort)
 		if err != nil {
-			return fmt.Errorf("failed to resolve video UDP address: %v", err)
+			return fmt.Errorf("failed to create video UDP connection: %w", err)
 		}
-
-		videoConn, err := net.DialUDP("udp", nil, videoAddr)
-		if err != nil {
-			return fmt.Errorf("failed to create video UDP connection: %v", err)
-		}
-
-		client.videoAddr = videoAddr
-		client.videoConn = videoConn
+		client.videoConn = conn
 	}
 
-	// Create audio connection if port provided
 	if audioRTPPort > 0 {
-		audioAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("localhost:%d", audioRTPPort))
+		conn, err := dialLocalUDP(audioRTPPort)
 		if err != nil {
-			if client.videoConn != nil {
-				client.videoConn.Close()
-			}
-			return fmt.Errorf("failed to resolve audio UDP address: %v", err)
+			client.close()
+			return fmt.Errorf("failed to create audio UDP connection: %w", err)
 		}
-
-		audioConn, err := net.DialUDP("udp", nil, audioAddr)
-		if err != nil {
-			if client.videoConn != nil {
-				client.videoConn.Close()
-			}
-			return fmt.Errorf("failed to create audio UDP connection: %v", err)
-		}
-
-		client.audioAddr = audioAddr
-		client.audioConn = audioConn
+		client.audioConn = conn
 	}
 
 	rf.clients[sessionID] = client
@@ -184,9 +187,6 @@ func (rf *RTPForwarder) SetupUDPBackchannel(sessionID string, clientPort int) (i
 		return 0, fmt.Errorf("client %s is not using UDP transport", sessionID)
 	}
 
-	// Store client's backchannel port
-	client.backchannelClientPort = clientPort
-
 	// If listeners already exist, return existing port
 	if client.backchannelListener != nil {
 		return client.backchannelServerPort, nil
@@ -195,18 +195,15 @@ func (rf *RTPForwarder) SetupUDPBackchannel(sessionID string, clientPort int) (i
 	// Allocate consecutive ports for RTP/RTCP
 	portPair, err := utils.DefaultPortAllocator.GetConsecutiveUDPPorts(nil, 10)
 	if err != nil {
-		return 0, fmt.Errorf("failed to allocate UDP ports for backchannel: %v", err)
+		return 0, fmt.Errorf("failed to allocate UDP ports for backchannel: %w", err)
 	}
 
-	// Store listeners and ports
 	client.backchannelListener = portPair.RTPListener
 	client.backchannelRTCPListener = portPair.RTCPListener
 	client.backchannelServerPort = portPair.RTPPort
-	client.backchannelRTCPPort = portPair.RTCPPort
 
-	// Start goroutines to handle incoming packets
 	go rf.handleUDPBackchannelRTP(sessionID, client.backchannelListener)
-	go rf.handleUDPBackchannelRTCP(client.backchannelRTCPListener)
+	go drainUDP(client.backchannelRTCPListener)
 
 	core.Logger.Trace().Msgf("Setup UDP backchannel for client %s (client ports:%d-%d, server ports:%d-%d)",
 		sessionID, clientPort, clientPort+1, portPair.RTPPort, portPair.RTCPPort)
@@ -218,32 +215,35 @@ func (rf *RTPForwarder) AddTCPClient(sessionID string, conn net.Conn, videoRTPCh
 	rf.mutex.Lock()
 	defer rf.mutex.Unlock()
 
-	// Check if client already exists, update it
-	if existingClient, exists := rf.clients[sessionID]; exists {
+	if existing, exists := rf.clients[sessionID]; exists {
 		core.Logger.Trace().Msgf("TCP client %s already exists, updating channels (video:%d->%d, audio:%d->%d, back:%d->%d)",
-			sessionID, existingClient.videoRTPChannel, videoRTPChannel, existingClient.audioRTPChannel, audioRTPChannel, existingClient.backAudioRTPChannel, backAudioRTPChannel)
-		existingClient.videoRTPChannel = videoRTPChannel
-		existingClient.audioRTPChannel = audioRTPChannel
-		existingClient.backAudioRTPChannel = backAudioRTPChannel
-		existingClient.lastActivity = time.Now()
+			sessionID, existing.videoRTPChannel, videoRTPChannel, existing.audioRTPChannel, audioRTPChannel, existing.backAudioRTPChannel, backAudioRTPChannel)
+		existing.videoRTPChannel = videoRTPChannel
+		existing.audioRTPChannel = audioRTPChannel
+		existing.backAudioRTPChannel = backAudioRTPChannel
 		return nil
 	}
 
-	client := &RTPClient{
+	rf.clients[sessionID] = &RTPClient{
 		sessionID:           sessionID,
 		transportMode:       TransportTCP,
 		tcpConn:             conn,
 		videoRTPChannel:     videoRTPChannel,
 		audioRTPChannel:     audioRTPChannel,
 		backAudioRTPChannel: backAudioRTPChannel,
-		lastActivity:        time.Now(),
 	}
-
-	rf.clients[sessionID] = client
 
 	core.Logger.Trace().Msgf("Added TCP RTP client %s (video channel:%d, audio channel:%d, back audio channel:%d)",
 		sessionID, videoRTPChannel, audioRTPChannel, backAudioRTPChannel)
 	return nil
+}
+
+func (c *RTPClient) close() {
+	for _, conn := range []*net.UDPConn{c.videoConn, c.audioConn, c.backchannelListener, c.backchannelRTCPListener} {
+		if conn != nil {
+			conn.Close()
+		}
+	}
 }
 
 func (rf *RTPForwarder) RemoveClient(sessionID string) {
@@ -251,34 +251,47 @@ func (rf *RTPForwarder) RemoveClient(sessionID string) {
 	defer rf.mutex.Unlock()
 
 	if client, exists := rf.clients[sessionID]; exists {
-		if client.transportMode == TransportUDP {
-			if client.videoConn != nil {
-				client.videoConn.Close()
-			}
-			if client.audioConn != nil {
-				client.audioConn.Close()
-			}
-			if client.backchannelListener != nil {
-				client.backchannelListener.Close()
-			}
-			if client.backchannelRTCPListener != nil {
-				client.backchannelRTCPListener.Close()
-			}
-		}
-
+		client.close()
 		delete(rf.clients, sessionID)
 		core.Logger.Trace().Msgf("Removed RTP client %s", sessionID)
 	}
 }
 
-func isDeadClientError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "broken pipe") ||
-		strings.Contains(msg, "connection reset by peer") ||
-		strings.Contains(msg, "use of closed network connection")
+func (rf *RTPForwarder) dropClients(sessionIDs []string) {
+	rf.mutex.Lock()
+	defer rf.mutex.Unlock()
+
+	for _, id := range sessionIDs {
+		if client, exists := rf.clients[id]; exists {
+			client.close()
+			delete(rf.clients, id)
+			core.Logger.Info().Msgf("Removing dead RTP client %s", id)
+		}
+	}
 }
 
-func (rf *RTPForwarder) getNALType(packet *rtp.Packet) byte {
+// snapshotClients copies the current client set into the direction's reusable
+// slice, so packets are written without holding the forwarder lock.
+func (rf *RTPForwarder) snapshotClients(into []*RTPClient) []*RTPClient {
+	rf.mutex.RLock()
+	defer rf.mutex.RUnlock()
+
+	into = into[:0]
+	for _, client := range rf.clients {
+		into = append(into, client)
+	}
+	return into
+}
+
+// isDeadClientError reports whether the peer is gone for good, as opposed to a
+// transient write failure worth logging.
+func isDeadClientError(err error) bool {
+	return errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, net.ErrClosed)
+}
+
+func getNALType(packet *rtp.Packet) byte {
 	if len(packet.Payload) == 0 {
 		return 0
 	}
@@ -293,8 +306,9 @@ func (rf *RTPForwarder) getNALType(packet *rtp.Packet) byte {
 	return nalType
 }
 
-func (rf *RTPForwarder) cacheSTAP(packet *rtp.Packet) {
-	// STAP-A (type 24): contains multiple NAL units including SPS/PPS
+// cacheSTAP records the parameter sets inside a STAP-A aggregate (type 24).
+// Callers hold s.mu.
+func (s *streamState) cacheSTAP(packet *rtp.Packet) {
 	payload := packet.Payload[1:] // skip STAP-A header byte
 	for len(payload) > 2 {
 		nalSize := int(payload[0])<<8 | int(payload[1])
@@ -302,221 +316,165 @@ func (rf *RTPForwarder) cacheSTAP(packet *rtp.Packet) {
 		if nalSize > len(payload) {
 			break
 		}
-		nalType := payload[0] & 0x1F
-		if nalType == 7 || nalType == 8 {
-			rf.cacheNAL(packet, nalType)
+		switch payload[0] & 0x1F {
+		case 7:
+			s.sps = packet.Clone()
+		case 8:
+			s.pps = packet.Clone()
 		}
 		payload = payload[nalSize:]
 	}
 }
 
-func (rf *RTPForwarder) cacheNAL(packet *rtp.Packet, nalType byte) {
-	switch nalType {
-	case 7:
-		rf.spsPacket = packet.Clone()
-	case 8:
-		rf.ppsPacket = packet.Clone()
+// rtpTicks converts elapsed wall-clock time into RTP timestamp units without
+// floating point. Seconds and remainder are scaled separately so a long-running
+// session cannot overflow the intermediate product; the uint32 result wraps,
+// which is what RTP expects.
+func rtpTicks(elapsed time.Duration, clockRate uint64) uint32 {
+	sec := uint64(elapsed / time.Second)
+	rem := uint64(elapsed % time.Second)
+	return uint32(sec*clockRate + rem*clockRate/uint64(time.Second))
+}
+
+// elapsed returns the time since the first packet of this direction, starting
+// the clock on first use. Callers hold s.mu.
+func (s *streamState) elapsed() time.Duration {
+	if !s.started {
+		s.timeStart = time.Now()
+		s.started = true
 	}
+	return time.Since(s.timeStart)
+}
+
+// marshal serialises packet into the direction's scratch buffer, leaving room
+// for an interleaving header. The RTP bytes start at interleaveHeaderLen.
+func (s *streamState) marshal(packet *rtp.Packet) ([]byte, error) {
+	size := interleaveHeaderLen + packet.MarshalSize()
+	if cap(s.buf) < size {
+		s.buf = make([]byte, size)
+	}
+	s.buf = s.buf[:size]
+	if _, err := packet.MarshalTo(s.buf[interleaveHeaderLen:]); err != nil {
+		return nil, err
+	}
+	return s.buf, nil
 }
 
 func (rf *RTPForwarder) ForwardVideoPacket(packet *rtp.Packet) {
-	rf.mutex.RLock()
+	s := &rf.video
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if len(rf.clients) == 0 {
-		rf.mutex.RUnlock()
+	s.snapshot = rf.snapshotClients(s.snapshot)
+	if len(s.snapshot) == 0 {
 		return
 	}
 
-	// Rebase timestamp to wall clock (90kHz for H264)
-	if !rf.videoTsStarted {
-		rf.videoTimeStart = time.Now()
-		rf.videoSeqStart = packet.SequenceNumber
-		rf.videoTsStarted = true
-	}
-	elapsed := time.Since(rf.videoTimeStart)
-	packet.Timestamp = uint32(elapsed.Seconds() * 90000)
-	packet.SequenceNumber = rf.videoSeqStart + (packet.SequenceNumber - rf.videoSeqStart)
+	packet.Timestamp = rtpTicks(s.elapsed(), s.clockRate)
 
-	nalType := rf.getNALType(packet)
-
-	// Cache SPS (7), PPS (8), and STAP-A (24) which may contain both
+	// Cache SPS (7), PPS (8), and STAP-A (24) which may carry both.
+	nalType := getNALType(packet)
 	switch nalType {
 	case 7:
-		rf.spsPacket = packet.Clone()
+		s.sps = packet.Clone()
 	case 8:
-		rf.ppsPacket = packet.Clone()
+		s.pps = packet.Clone()
 	case 24:
-		rf.cacheSTAP(packet)
+		s.cacheSTAP(packet)
 	}
 
-	// Before IDR keyframe (5), inject cached SPS/PPS
-	if nalType == 5 && rf.spsPacket != nil && rf.ppsPacket != nil {
-		rf.forwardVideoData(rf.spsPacket)
-		rf.forwardVideoData(rf.ppsPacket)
+	// Before an IDR keyframe (5), replay the cached parameter sets.
+	if nalType == 5 && s.sps != nil && s.pps != nil {
+		rf.forward(s, s.sps, videoChannel)
+		rf.forward(s, s.pps, videoChannel)
 	}
 
-	rf.forwardVideoData(packet)
-	rf.mutex.RUnlock()
-}
-
-func (rf *RTPForwarder) forwardVideoData(packet *rtp.Packet) {
-	data, err := packet.Marshal()
-	if err != nil {
-		core.Logger.Error().Err(err).Msg("Error marshaling video RTP packet")
-		return
-	}
-
-	var deadClients []string
-
-	for sessionID, client := range rf.clients {
-		client.lastActivity = time.Now()
-
-		if client.transportMode == TransportUDP {
-			if client.videoConn != nil {
-				if _, err := client.videoConn.Write(data); err != nil {
-					if isDeadClientError(err) {
-						deadClients = append(deadClients, sessionID)
-					} else {
-						core.Logger.Error().Err(err).Msgf("Error forwarding video packet to UDP client %s", sessionID)
-					}
-				} else if rf.firstVideoPacket {
-					rf.firstVideoPacket = false
-					core.Logger.Trace().Msgf("Successfully sent first video packet to UDP client %s on port %d",
-						sessionID, client.videoRTPPort)
-				}
-			}
-		} else if client.transportMode == TransportTCP {
-			if client.tcpConn != nil {
-				if err := rf.sendInterleavedRTP(client.tcpConn, client.videoRTPChannel, data); err != nil {
-					if isDeadClientError(err) {
-						deadClients = append(deadClients, sessionID)
-					} else {
-						core.Logger.Error().Err(err).Msgf("Error forwarding video packet to TCP client %s", sessionID)
-					}
-				} else if rf.firstVideoPacket {
-					rf.firstVideoPacket = false
-					core.Logger.Trace().Msgf("Successfully sent first video packet to TCP client %s on channel %d",
-						sessionID, client.videoRTPChannel)
-				}
-			}
-		}
-	}
-
-	if len(deadClients) > 0 {
-		for _, id := range deadClients {
-			core.Logger.Info().Msgf("Removing dead video client %s", id)
-			delete(rf.clients, id)
-		}
-	}
+	rf.forward(s, packet, videoChannel)
 }
 
 func (rf *RTPForwarder) ForwardAudioPacket(packet *rtp.Packet) {
-	rf.mutex.RLock()
-	defer rf.mutex.RUnlock()
+	s := &rf.audio
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if len(rf.clients) == 0 {
+	s.snapshot = rf.snapshotClients(s.snapshot)
+	if len(s.snapshot) == 0 {
 		return
 	}
 
-	// Rebase timestamp to wall clock (8kHz for PCMU)
-	if !rf.audioTsStarted {
-		rf.audioTimeStart = time.Now()
-		rf.audioTsStarted = true
-	}
-	elapsed := time.Since(rf.audioTimeStart)
-	packet.Timestamp = uint32(elapsed.Seconds() * 8000)
+	packet.Timestamp = rtpTicks(s.elapsed(), s.clockRate)
+	rf.forward(s, packet, audioChannel)
+}
 
-	// Serialize packet
-	data, err := packet.Marshal()
+// forward writes one packet to every client in the direction's snapshot. The
+// caller holds the direction lock; the forwarder lock is not held, so a slow
+// client cannot block a session teardown.
+func (rf *RTPForwarder) forward(s *streamState, packet *rtp.Packet, dir direction) {
+	buf, err := s.marshal(packet)
 	if err != nil {
-		core.Logger.Error().Err(err).Msg("Error marshaling audio RTP packet")
+		core.Logger.Error().Err(err).Msgf("Error marshaling %s RTP packet", dir)
 		return
 	}
+	rtpData := buf[interleaveHeaderLen:]
 
-	// Forward to all clients
-	for sessionID, client := range rf.clients {
-		client.lastActivity = time.Now()
+	var dead []string
+
+	for _, client := range s.snapshot {
+		var writeErr error
 
 		if client.transportMode == TransportUDP {
-			if client.audioConn != nil {
-				if _, err := client.audioConn.Write(data); err != nil {
-					core.Logger.Error().Err(err).Msgf("Error forwarding audio packet to UDP client %s", sessionID)
-				} else if rf.firstAudioPacket {
-					rf.firstAudioPacket = false
-					core.Logger.Trace().Msgf("Successfully sent first audio packet to UDP client %s on port %d",
-						sessionID, client.audioRTPPort)
-				}
+			conn := dir.conn(client)
+			if conn == nil {
+				continue
 			}
-		} else if client.transportMode == TransportTCP {
-			if client.tcpConn != nil {
-				if err := rf.sendInterleavedRTP(client.tcpConn, client.audioRTPChannel, data); err != nil {
-					core.Logger.Error().Err(err).Msgf("Error forwarding audio packet to TCP client %s", sessionID)
-				} else if rf.firstAudioPacket {
-					rf.firstAudioPacket = false
-					core.Logger.Trace().Msgf("Successfully sent first audio packet to TCP client %s on channel %d",
-						sessionID, client.audioRTPChannel)
-				}
+			_, writeErr = conn.Write(rtpData)
+		} else {
+			if client.tcpConn == nil {
+				continue
 			}
+			// Interleaved framing in front of the bytes already marshalled, so
+			// header and payload leave in a single write.
+			buf[0] = '$'
+			buf[1] = dir.channel(client)
+			buf[2] = byte(len(rtpData) >> 8)
+			buf[3] = byte(len(rtpData))
+			_, writeErr = client.tcpConn.Write(buf)
 		}
+
+		switch {
+		case writeErr == nil:
+			if !s.logged {
+				s.logged = true
+				core.Logger.Trace().Msgf("Successfully sent first %s packet to client %s", dir, client.sessionID)
+			}
+		case isDeadClientError(writeErr):
+			dead = append(dead, client.sessionID)
+		default:
+			core.Logger.Error().Err(writeErr).Msgf("Error forwarding %s packet to client %s", dir, client.sessionID)
+		}
+	}
+
+	if len(dead) > 0 {
+		rf.dropClients(dead)
 	}
 }
 
 func (rf *RTPForwarder) Stop() {
-	// Reset SSRCs
-	rf.videoSSRC = 0
-	rf.audioSSRC = 1
+	rf.mutex.Lock()
+	for sessionID, client := range rf.clients {
+		client.close()
+		delete(rf.clients, sessionID)
+	}
+	rf.mutex.Unlock()
 
-	// Reset first packet flags
-	rf.firstVideoPacket = true
-	rf.firstAudioPacket = true
-
-	// Clear all clients
-	for sessionID := range rf.clients {
-		rf.RemoveClient(sessionID)
+	for _, s := range []*streamState{&rf.video, &rf.audio} {
+		s.mu.Lock()
+		s.started, s.logged = false, false
+		s.sps, s.pps = nil, nil
+		s.mu.Unlock()
 	}
 
 	core.Logger.Trace().Msg("RTPForwarder stopped and all clients cleared")
-}
-
-func (rf *RTPForwarder) GetClientCount() int {
-	rf.mutex.RLock()
-	defer rf.mutex.RUnlock()
-	return len(rf.clients)
-}
-
-func (rf *RTPForwarder) CleanupInactiveClients(timeout time.Duration) {
-	rf.mutex.Lock()
-	defer rf.mutex.Unlock()
-
-	now := time.Now()
-	var toRemove []string
-
-	for sessionID, client := range rf.clients {
-		if now.Sub(client.lastActivity) > timeout {
-			toRemove = append(toRemove, sessionID)
-		}
-	}
-
-	for _, sessionID := range toRemove {
-		if client, exists := rf.clients[sessionID]; exists {
-			if client.transportMode == TransportUDP {
-				if client.videoConn != nil {
-					client.videoConn.Close()
-				}
-				if client.audioConn != nil {
-					client.audioConn.Close()
-				}
-				if client.backchannelListener != nil {
-					client.backchannelListener.Close()
-				}
-				if client.backchannelRTCPListener != nil {
-					client.backchannelRTCPListener.Close()
-				}
-			}
-			delete(rf.clients, sessionID)
-			core.Logger.Trace().Msgf("Cleaned up inactive RTP client %s", sessionID)
-		}
-	}
 }
 
 func (rf *RTPForwarder) handleUDPBackchannelRTP(sessionID string, listener *net.UDPConn) {
@@ -527,55 +485,33 @@ func (rf *RTPForwarder) handleUDPBackchannelRTP(sessionID string, listener *net.
 	for {
 		n, _, err := listener.ReadFromUDP(buffer)
 		if err != nil {
-			if !strings.Contains(err.Error(), "closed") {
+			if !errors.Is(err, net.ErrClosed) {
 				core.Logger.Error().Err(err).Msgf("Error reading UDP RTP backchannel for client %s", sessionID)
 			}
-			break
+			return
 		}
 
-		// Parse RTP packet
+		if rf.OnBackchannelAudio == nil {
+			continue
+		}
+
 		packet := &rtp.Packet{}
 		if err := packet.Unmarshal(buffer[:n]); err != nil {
 			continue
 		}
-
-		// Forward to WebRTC bridge
-		if rf.OnBackchannelAudio != nil {
-			rf.OnBackchannelAudio(packet)
-		}
+		rf.OnBackchannelAudio(packet)
 	}
 }
 
-func (rf *RTPForwarder) handleUDPBackchannelRTCP(listener *net.UDPConn) {
+// drainUDP discards everything on a socket that must stay bound but is never
+// read, such as the backchannel's RTCP port.
+func drainUDP(listener *net.UDPConn) {
 	defer listener.Close()
 
 	buffer := make([]byte, 1500)
-
 	for {
-		_, _, err := listener.ReadFromUDP(buffer)
-		if err != nil {
-			// Ignore
-			break
+		if _, _, err := listener.ReadFromUDP(buffer); err != nil {
+			return
 		}
-
-		// Simply discard RTCP packets
 	}
-}
-
-func (rf *RTPForwarder) sendInterleavedRTP(conn net.Conn, channel byte, rtpData []byte) error {
-	// Interleaved format: $ + channel + length(2 bytes) + RTP data
-	header := make([]byte, 4)
-	header[0] = '$'                     // Magic byte
-	header[1] = channel                 // Channel number
-	header[2] = byte(len(rtpData) >> 8) // Length high byte
-	header[3] = byte(len(rtpData))      // Length low byte
-
-	// Send header + data in one write to avoid fragmentation
-	fullPacket := append(header, rtpData...)
-
-	if _, err := conn.Write(fullPacket); err != nil {
-		return err
-	}
-
-	return nil
 }

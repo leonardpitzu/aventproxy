@@ -390,13 +390,13 @@ client.set_dps(cam_id, {"237": "0"})  # privacy off
 ```bash
 # Python integration
 python3 -m venv .venv && source .venv/bin/activate
-pip install pytest pycryptodome aiohttp voluptuous
-PYTHONPATH=. pytest tests/test_philips_avent/ -v
-ruff check custom_components/ --ignore E501
+pip install --group test --group lint
+pytest
+ruff check custom_components/ tools/ tests/
 
 # Go bridge
 cd avent-webrtc-bridge
-go build ./... && go test ./... && gofmt -l .
+go build ./... && go vet ./... && go test -race ./... && gofmt -l .
 ./avent-webrtc-bridge direct --help
 ```
 

@@ -1,9 +1,20 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[dependency-groups]
+# Everything the unit tests need. They exercise the HA-free half of the
+# integration, so homeassistant itself is deliberately not in here.
+test = [
+    "pytest",
+    "aiohttp",
+    "voluptuous",
+    "cryptography",
+]
+lint = ["ruff==0.16.2"]
+
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 # Pin the rules the project enforces. Without this, `ruff check` inherits
@@ -26,3 +37,5 @@ select = [
 # Reverse-engineering aids, run by hand and not shipped to users. Broad
 # excepts are the point in a probe script.
 "tools/*" = ["BLE001", "S110", "SIM105", "PLW0603"]
+# A test that asserts on the exception type it gets back has to catch broadly.
+"tests/*" = ["BLE001"]

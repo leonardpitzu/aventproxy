@@ -4,7 +4,7 @@ Entity classes require homeassistant runtime, so we test the transformation
 logic they use: DPS parsing, URL construction, event detection patterns.
 """
 
-from const import (
+from philips_avent.const import (
     CONF_BRIDGE_PORT,
     DEFAULT_BRIDGE_PORT,
     DPS_ALERT_EVENT,

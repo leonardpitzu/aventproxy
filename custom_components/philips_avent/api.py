@@ -11,10 +11,14 @@ from typing import Any
 
 import aiohttp
 
-try:
-    from .const import TUYA_API_URL, TUYA_APP_KEY, TUYA_CH_KEY, TUYA_DEFAULT_COUNTRY_CODE, TUYA_SIGNING_KEY
-except ImportError:
-    from const import TUYA_API_URL, TUYA_APP_KEY, TUYA_CH_KEY, TUYA_DEFAULT_COUNTRY_CODE, TUYA_SIGNING_KEY
+from .const import (
+    TUYA_API_URL,
+    TUYA_APP_KEY,
+    TUYA_CH_KEY,
+    TUYA_DEFAULT_COUNTRY_CODE,
+    TUYA_PACKAGE_NAME,
+    TUYA_SIGNING_KEY,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +27,12 @@ SIGN_PARAM_WHITELIST = frozenset([
     "isH5", "h5Token", "os", "clientId", "postData", "time", "requestId",
     "et", "n4h5", "sid", "chKey", "sp",
 ])
+
+
+def _md5(data: str) -> str:
+    """Tuya's signing digest. Not a security choice, so say so: on a FIPS build
+    an unqualified md5() raises instead of hashing."""
+    return hashlib.md5(data.encode(), usedforsecurity=False).hexdigest()
 
 
 def _swap(s: str) -> str:
@@ -34,8 +44,7 @@ def _swap(s: str) -> str:
 def _sign(params: dict[str, str]) -> str:
     filtered = {k: v for k, v in params.items() if k in SIGN_PARAM_WHITELIST and v}
     if filtered.get("postData"):
-        md5 = hashlib.md5(filtered["postData"].encode()).hexdigest()
-        filtered["postData"] = _swap(md5)
+        filtered["postData"] = _swap(_md5(filtered["postData"]))
     param_str = "||".join(f"{k}={filtered[k]}" for k in sorted(filtered))
     return hmac.new(
         TUYA_SIGNING_KEY.encode(), param_str.encode(), hashlib.sha256
@@ -57,6 +66,16 @@ class TuyaAPIError(Exception):
         self.code = code
         self.message = message
         super().__init__(f"{code}: {message}")
+
+
+# Codes that mean the stored session is no longer usable, so the entry has to
+# re-authenticate rather than retry.
+AUTH_ERROR_CODES = ("SID_INVALID", "USER_SESSION_LOSS")
+
+
+def is_auth_error(err: TuyaAPIError) -> bool:
+    """Whether this failure means the account session died."""
+    return any(code in err.code for code in AUTH_ERROR_CODES)
 
 
 def classify_login_error(code: str, *, mfa: bool = False) -> str:
@@ -214,14 +233,18 @@ class PhilipsAventAPI:
 
     @staticmethod
     def encrypt_password(password: str, pb_key: str) -> str:
-        from Crypto.Cipher import PKCS1_v1_5
-        from Crypto.PublicKey import RSA
+        """RSA-encrypt the password digest the way the Tuya app does.
 
-        md5_pass = hashlib.md5(password.encode()).hexdigest()
-        pem = f"-----BEGIN PUBLIC KEY-----\n{pb_key}\n-----END PUBLIC KEY-----"
-        rsa_key = RSA.import_key(pem)
-        cipher = PKCS1_v1_5.new(rsa_key)
-        return cipher.encrypt(md5_pass.encode()).hex()
+        Blocking: callers run this in an executor. Uses `cryptography`, which
+        Home Assistant already ships, rather than pulling in a second crypto
+        wheel for one PKCS#1 v1.5 operation.
+        """
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+        pem = f"-----BEGIN PUBLIC KEY-----\n{pb_key}\n-----END PUBLIC KEY-----\n"
+        key = load_pem_public_key(pem.encode())
+        return key.encrypt(_md5(password).encode(), padding.PKCS1v15()).hex()
 
     # -- Device / Camera ---------------------------------------------------
 
@@ -370,23 +393,16 @@ class PhilipsAventAPI:
 
     @staticmethod
     def derive_mqtt_password(ecode: str) -> str:
-        md5_key = hashlib.md5(TUYA_SIGNING_KEY.encode()).hexdigest()
-        full = hashlib.md5((md5_key + ecode).encode()).hexdigest()
-        return full[8:24]
+        return _md5(_md5(TUYA_SIGNING_KEY) + ecode)[8:24]
 
     @staticmethod
     def derive_mqtt_username(
         sid: str, ecode: str, partner_identity: str
     ) -> str:
-        md5_appkey = hashlib.md5(TUYA_APP_KEY.encode()).hexdigest()
-        tail = hashlib.md5((md5_appkey + ecode).encode()).hexdigest()[-16:]
+        tail = _md5(_md5(TUYA_APP_KEY) + ecode)[-16:]
         return f"{partner_identity}_v1_{TUYA_APP_KEY}_{TUYA_CH_KEY}_mb_{sid}{tail}"
 
     @staticmethod
     def derive_mqtt_client_id(uid: str, device_id: str) -> str:
-        uid_hash = hashlib.md5((uid + "sdkfasodifca").encode()).hexdigest()
-        try:
-            from .const import TUYA_PACKAGE_NAME
-        except ImportError:
-            from const import TUYA_PACKAGE_NAME
+        uid_hash = _md5(uid + "sdkfasodifca")
         return f"{TUYA_PACKAGE_NAME}_mb_{device_id}_{uid_hash}_DEFAULT"

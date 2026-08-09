@@ -1,8 +1,8 @@
 """Tests for the shared device_info builder (issue #42: wrong hard-coded model)."""
 from types import SimpleNamespace
 
-from entity import build_device_info
-from const import DOMAIN, PRODUCT_ID_TO_MODEL
+from philips_avent.const import DOMAIN, PRODUCT_ID_TO_MODEL
+from philips_avent.entity import build_device_info
 
 
 def _coordinator(device_info, name="Nursery"):

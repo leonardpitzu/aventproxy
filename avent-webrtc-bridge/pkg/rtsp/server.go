@@ -555,12 +555,6 @@ func (cs *CameraStream) RemoveClient(sessionID string) {
 	}
 }
 
-func (cs *CameraStream) SetShutdownDelay(delay time.Duration) {
-	cs.mutex.Lock()
-	defer cs.mutex.Unlock()
-	cs.shutdownDelay = delay
-}
-
 func (cs *CameraStream) Stop() {
 	// Clear all clients first
 	for sessionID := range cs.clients {

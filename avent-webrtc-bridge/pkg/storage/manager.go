@@ -59,10 +59,6 @@ func NewStorageManager() (*StorageManager, error) {
 	}, nil
 }
 
-func (sm *StorageManager) GetDataDir() string {
-	return sm.dataDir
-}
-
 func userKey(region, email string) string {
 	safeEmail := strings.ReplaceAll(strings.ReplaceAll(email, "@", "_at_"), ".", "_")
 	return fmt.Sprintf("%s_%s", region, safeEmail)
@@ -250,23 +246,4 @@ func (sm *StorageManager) GetAllCameras() ([]CameraInfo, error) {
 
 func (sm *StorageManager) GenerateRTSPPath(deviceName, deviceID string) string {
 	return SanitizeRTSPPath(deviceName, deviceID)
-}
-
-func (sm *StorageManager) ValidateUserSession(region, email string) (bool, error) {
-	user, err := sm.GetUser(region, email)
-	if err != nil {
-		return false, err
-	}
-
-	if user == nil {
-		return false, nil
-	}
-
-	// Check if session is older than 4 days
-	// It seems the cookie expires after 4 days
-	if time.Since(user.LastRefresh) > 4*24*time.Hour {
-		return false, nil
-	}
-
-	return true, nil
 }

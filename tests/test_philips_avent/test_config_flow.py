@@ -2,8 +2,8 @@
 
 import json
 
-from api import TuyaAPIError, classify_login_error
-from const import CONF_BRIDGE_HOST, CONF_BRIDGE_PORT, DEFAULT_BRIDGE_HOST, DEFAULT_BRIDGE_PORT
+from philips_avent.api import TuyaAPIError, classify_login_error
+from philips_avent.const import CONF_BRIDGE_HOST, CONF_BRIDGE_PORT, DEFAULT_BRIDGE_HOST, DEFAULT_BRIDGE_PORT
 
 
 class TestTuyaAPIError:

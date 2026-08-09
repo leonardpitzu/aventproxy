@@ -25,22 +25,25 @@ const (
 var MemoryLog = newBuffer()
 var Logger zerolog.Logger
 
+// InitLogger wires stdout and the in-memory ring buffer together. The level
+// comes from LOG_LEVEL and defaults to info: at trace the streaming path
+// formats and buffers a line per RTP packet.
 func InitLogger() zerolog.Logger {
-	var writer io.Writer
-	writer = os.Stdout
+	stdout := os.Stdout
 
-	console := &zerolog.ConsoleWriter{Out: writer}
-	console.NoColor = !isatty.IsTerminal(writer.(*os.File).Fd())
+	console := &zerolog.ConsoleWriter{Out: stdout}
+	console.NoColor = !isatty.IsTerminal(stdout.Fd())
 	console.TimeFormat = "15:04:05.000"
 
-	writer = console
-	writer = zerolog.MultiLevelWriter(writer, MemoryLog)
+	writer := zerolog.MultiLevelWriter(console, MemoryLog)
 
-	lvl, _ := zerolog.ParseLevel("trace")
-	Logger = zerolog.New(writer).Level(lvl)
+	lvl, err := zerolog.ParseLevel(os.Getenv("LOG_LEVEL"))
+	if err != nil || lvl == zerolog.NoLevel {
+		lvl = zerolog.InfoLevel
+	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
-	Logger = Logger.With().Timestamp().Logger()
+	Logger = zerolog.New(writer).Level(lvl).With().Timestamp().Logger()
 
 	return Logger
 }

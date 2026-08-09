@@ -5,32 +5,32 @@ import logging
 
 from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.components.ffmpeg import async_get_image as ffmpeg_get_image
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     CONF_BRIDGE_HOST,
     CONF_BRIDGE_PORT,
     DEFAULT_BRIDGE_HOST,
     DEFAULT_BRIDGE_PORT,
-    DOMAIN,
     build_rtsp_url,
 )
-from .coordinator import PhilipsAventCoordinator
+from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: PhilipsAventConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
+    coordinators = entry.runtime_data.coordinators
     bridge_port = entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT)
     bridge_host = entry.options.get(CONF_BRIDGE_HOST, DEFAULT_BRIDGE_HOST)
     entities = []
-    for cam_id, coordinator in data["coordinators"].items():
+    for cam_id, coordinator in coordinators.items():
         entities.append(AventCamera(coordinator, cam_id, bridge_port, bridge_host))
     async_add_entities(entities)
 

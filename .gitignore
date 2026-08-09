@@ -24,8 +24,5 @@ avent-webrtc-bridge/avent-webrtc-bridge
 *.pcap
 captures/
 
-# uv
-uv.lock
-
 # Git worktrees
 .worktrees/

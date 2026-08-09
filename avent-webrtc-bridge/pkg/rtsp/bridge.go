@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pion "github.com/pion/webrtc/v4"
@@ -25,6 +27,9 @@ import (
 
 	"github.com/pion/rtp"
 )
+
+// extmapLine matches the SDP header-extension lines the monitor cannot parse.
+var extmapLine = regexp.MustCompile(`\r\na=extmap[^\r\n]*`)
 
 type WebRTCBridge struct {
 	camera         *storage.CameraInfo
@@ -41,6 +46,11 @@ type WebRTCBridge struct {
 	mqttClient     *tuya.MQTTClient
 	cameraClient   *tuya.MQTTCameraClient
 	rtpForwarder   *RTPForwarder
+
+	// SSRCs the camera announces for the HEVC datachannel transport, which
+	// arrive on the signalling goroutine and are read on the media one.
+	videoSSRC atomic.Uint32
+	audioSSRC atomic.Uint32
 
 	// State
 	connected         bool
@@ -302,12 +312,6 @@ func (wb *WebRTCBridge) Stop() {
 	core.Logger.Info().Msgf("WebRTC bridge stopped for camera: %s", wb.camera.DeviceName)
 }
 
-func (wb *WebRTCBridge) IsConnected() bool {
-	wb.mutex.RLock()
-	defer wb.mutex.RUnlock()
-	return wb.connected
-}
-
 func (wb *WebRTCBridge) ForwardBackchannelAudioPacket(packet *rtp.Packet) {
 	if wb.backchannel != nil {
 		_ = wb.backchannel.WriteRTP(packet)
@@ -370,9 +374,9 @@ func (wb *WebRTCBridge) setupPeerConnection(webRTCConfig *tuya.WebRTCConfig) err
 				}
 
 				switch packet.SSRC {
-				case wb.rtpForwarder.videoSSRC:
+				case wb.videoSSRC.Load():
 					wb.rtpForwarder.ForwardVideoPacket(packet)
-				case wb.rtpForwarder.audioSSRC:
+				case wb.audioSSRC.Load():
 					wb.rtpForwarder.ForwardAudioPacket(packet)
 				}
 			}
@@ -562,8 +566,7 @@ func (wb *WebRTCBridge) createAndSendOffer() error {
 	}
 
 	// Remove extmap lines to reduce payload size (device limitation)
-	re := regexp.MustCompile(`\r\na=extmap[^\r\n]*`)
-	offer = re.ReplaceAllString(offer, "")
+	offer = extmapLine.ReplaceAllString(offer, "")
 
 	core.Logger.Trace().Msgf("Sending WebRTC offer")
 
@@ -585,13 +588,7 @@ func (wb *WebRTCBridge) handleVideoTrack(track *pion.TrackRemote) {
 		default:
 			packet, _, err := track.ReadRTP()
 			if err != nil {
-				if err == io.EOF {
-					return
-				}
-				// Check if it's a known close error
-				if strings.Contains(err.Error(), "closed") ||
-					strings.Contains(err.Error(), "EOF") ||
-					strings.Contains(err.Error(), "use of closed network connection") {
+				if isStreamClosed(err) {
 					return
 				}
 				core.Logger.Warn().Err(err).Msg("Unexpected error reading video RTP packet")
@@ -614,12 +611,7 @@ func (wb *WebRTCBridge) handleAudioTrack(track *pion.TrackRemote) {
 		default:
 			packet, _, err := track.ReadRTP()
 			if err != nil {
-				if err == io.EOF {
-					return
-				}
-				if strings.Contains(err.Error(), "closed") ||
-					strings.Contains(err.Error(), "EOF") ||
-					strings.Contains(err.Error(), "use of closed network connection") {
+				if isStreamClosed(err) {
 					return
 				}
 				core.Logger.Warn().Err(err).Msg("Unexpected error reading audio RTP packet")
@@ -630,6 +622,14 @@ func (wb *WebRTCBridge) handleAudioTrack(track *pion.TrackRemote) {
 			wb.rtpForwarder.ForwardAudioPacket(packet)
 		}
 	}
+}
+
+// isStreamClosed reports whether a read failed because the track or its
+// transport is gone, which ends the handler rather than logging.
+func isStreamClosed(err error) bool {
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, pion.ErrConnectionClosed)
 }
 
 func (wb *WebRTCBridge) createHTTPClient() *http.Client {
@@ -689,8 +689,8 @@ func (wb *WebRTCBridge) probe(msg pion.DataChannelMessage) (bool, error) {
 			return false, err
 		}
 
-		wb.rtpForwarder.videoSSRC = recvMessage.Video.SSRC
-		wb.rtpForwarder.audioSSRC = recvMessage.Audio.SSRC
+		wb.videoSSRC.Store(recvMessage.Video.SSRC)
+		wb.audioSSRC.Store(recvMessage.Audio.SSRC)
 
 		completeMsg, _ := json.Marshal(tuya.DataChannelMessage{
 			Type: "complete",
