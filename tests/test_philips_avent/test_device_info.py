@@ -1,4 +1,5 @@
 """Tests for the shared device_info builder (issue #42: wrong hard-coded model)."""
+
 from types import SimpleNamespace
 
 from philips_avent.const import DOMAIN, PRODUCT_ID_TO_MODEL

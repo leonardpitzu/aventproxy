@@ -1,4 +1,5 @@
 """Philips Avent Baby Monitor integration for Home Assistant."""
+
 from __future__ import annotations
 
 import asyncio
@@ -87,9 +88,7 @@ def _persist_lan_secrets(hass: HomeAssistant, entry: ConfigEntry, cameras: list)
                 changed = True
         updated.append(merged)
     if changed:
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, "cameras": updated}
-        )
+        hass.config_entries.async_update_entry(entry, data={**entry.data, "cameras": updated})
         _LOGGER.info("Stored LAN credentials for %d camera(s)", len(updated))
 
 
@@ -125,12 +124,12 @@ async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: Phi
         cameras=cameras,
     )
     bridge_path = Path(hass.config.path(bridge_config_filename(entry.entry_id)))
-    await hass.async_add_executor_job(
-        bridge_path.write_text, json.dumps(bridge_config, indent=2)
-    )
+    await hass.async_add_executor_job(bridge_path.write_text, json.dumps(bridge_config, indent=2))
     _LOGGER.info(
         "Bridge config written to %s (port: %d, api host: %s)",
-        bridge_path, bridge_port, bridge_config["api_host"],
+        bridge_path,
+        bridge_port,
+        bridge_config["api_host"],
     )
 
     legacy_path = Path(hass.config.path("philips_avent_bridge.json"))
@@ -220,9 +219,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
         # Entries created before the id was persisted: keep the one just
         # generated, so the bridge config stops changing on every restart
         # (issue #73).
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, CONF_DEVICE_ID: api.device_id}
-        )
+        hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_DEVICE_ID: api.device_id})
         _LOGGER.info("Stored a stable device id for this account")
 
     # Use cameras stored in config entry (discovered during config flow)
@@ -288,9 +285,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
         _LOGGER.error("No cameras found. Reconfigure the integration to re-discover.")
         return False
 
-    coordinators = dict(
-        await asyncio.gather(*(_setup_camera(hass, entry, api, cam) for cam in cameras))
-    )
+    coordinators = dict(await asyncio.gather(*(_setup_camera(hass, entry, api, cam) for cam in cameras)))
 
     _persist_lan_secrets(hass, entry, cameras)
 
@@ -330,9 +325,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        await asyncio.gather(
-            *(c.stop_lan() for c in entry.runtime_data.coordinators.values())
-        )
+        await asyncio.gather(*(c.stop_lan() for c in entry.runtime_data.coordinators.values()))
 
     return unload_ok
 

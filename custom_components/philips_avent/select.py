@@ -1,4 +1,5 @@
 """Select entities for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 import json
@@ -41,16 +42,26 @@ async def async_setup_entry(
     for cam_id, coordinator in coordinators.items():
         entities.append(AventLullabySelect(coordinator, cam_id))
         entities.append(AventPlayModeSelect(coordinator, cam_id))
-        entities.append(AventTimerSelect(
-            coordinator, cam_id,
-            "Lullaby Timer", "mdi:timer-music-outline",
-            DPS_LULLABY_TIMER, DPS_LULLABY_TIMER_SWITCH,
-        ))
-        entities.append(AventTimerSelect(
-            coordinator, cam_id,
-            "Night Light Timer", "mdi:timer-outline",
-            DPS_LIGHT_TIMER, DPS_LIGHT_TIMER_SWITCH,
-        ))
+        entities.append(
+            AventTimerSelect(
+                coordinator,
+                cam_id,
+                "Lullaby Timer",
+                "mdi:timer-music-outline",
+                DPS_LULLABY_TIMER,
+                DPS_LULLABY_TIMER_SWITCH,
+            )
+        )
+        entities.append(
+            AventTimerSelect(
+                coordinator,
+                cam_id,
+                "Night Light Timer",
+                "mdi:timer-outline",
+                DPS_LIGHT_TIMER,
+                DPS_LIGHT_TIMER_SWITCH,
+            )
+        )
     async_add_entities(entities)
 
 
@@ -84,13 +95,13 @@ class AventLullabySelect(CoordinatorEntity, SelectEntity):
         track_id = LULLABY_ID_BY_NAME.get(option)
         if track_id is None:
             return
-        await self.coordinator.set_dps({
-            "202": json.dumps({"bizcode": "phi-no-bm", "id": track_id}),
-            DPS_LULLABY_CONTROL: "play",
-        })
-        self.coordinator.data["248"] = json.dumps(
-            {"bizcode": "phi-no-bm", "id": track_id, "errcode": 0}
+        await self.coordinator.set_dps(
+            {
+                "202": json.dumps({"bizcode": "phi-no-bm", "id": track_id}),
+                DPS_LULLABY_CONTROL: "play",
+            }
         )
+        self.coordinator.data["248"] = json.dumps({"bizcode": "phi-no-bm", "id": track_id, "errcode": 0})
         self.async_write_ha_state()
 
 
@@ -126,8 +137,13 @@ class AventTimerSelect(CoordinatorEntity, SelectEntity):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: PhilipsAventCoordinator, cam_id: str,
-        name: str, icon: str, dps_timer: str, dps_switch: str,
+        self,
+        coordinator: PhilipsAventCoordinator,
+        cam_id: str,
+        name: str,
+        icon: str,
+        dps_timer: str,
+        dps_switch: str,
     ):
         super().__init__(coordinator)
         self._attr_options = list(TIMER_OPTIONS.keys())

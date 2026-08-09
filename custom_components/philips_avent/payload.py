@@ -3,6 +3,7 @@
 This module contains no Home Assistant or aiohttp imports so it can be
 loaded by tests without dragging in the full HA stack.
 """
+
 from __future__ import annotations
 
 BRIDGE_CONFIG_PREFIX = "philips_avent_bridge_"
@@ -27,7 +28,7 @@ def orphan_bridge_configs(filenames: list[str], valid_entry_ids: set[str]) -> li
     for name in filenames:
         if not name.startswith(BRIDGE_CONFIG_PREFIX) or not name.endswith(BRIDGE_CONFIG_SUFFIX):
             continue
-        entry_id = name[len(BRIDGE_CONFIG_PREFIX):-len(BRIDGE_CONFIG_SUFFIX)]
+        entry_id = name[len(BRIDGE_CONFIG_PREFIX) : -len(BRIDGE_CONFIG_SUFFIX)]
         if entry_id and entry_id not in valid_entry_ids:
             orphans.append(name)
     return orphans
@@ -52,9 +53,7 @@ def dps_delta(old: dict | None, new: dict | None, max_chars: int = DELTA_VALUE_M
         return {}
     old = old or {}
 
-    return truncated_dps(
-        {k: v for k, v in new.items() if k not in old or old[k] != v}, max_chars
-    )
+    return truncated_dps({k: v for k, v in new.items() if k not in old or old[k] != v}, max_chars)
 
 
 def truncated_dps(dps: dict | None, max_chars: int = DELTA_VALUE_MAX_CHARS) -> dict:
@@ -132,12 +131,7 @@ def build_cameras_payload(cameras: list) -> list:
         {
             "camera_id": cam.get("deviceId") or cam.get("devId") or cam.get("id", ""),
             "camera_name": cam.get("deviceName") or cam.get("name", "camera"),
-            "product_id": (
-                cam.get("productId")
-                or cam.get("product_id")
-                or cam.get("productKey")
-                or ""
-            ),
+            "product_id": (cam.get("productId") or cam.get("product_id") or cam.get("productKey") or ""),
             "local_key": cam.get("localKey") or cam.get("local_key") or "",
             "password": cam.get("password") or "",
             "lan_ip": cam.get("lanIp") or cam.get("lan_ip") or "",

@@ -78,11 +78,7 @@ import hmac, hashlib
 signing_key = "..."  # from extraction
 params_string = "a=smartlife.p.time.get||v=1.0||..."  # sorted, filtered, || separated
 
-signature = hmac.new(
-    signing_key.encode(),
-    params_string.encode(),
-    hashlib.sha256
-).hexdigest()
+signature = hmac.new(signing_key.encode(), params_string.encode(), hashlib.sha256).hexdigest()
 ```
 
 See the "Tuya Mobile SDK API" section of the project README for the complete algorithm.

@@ -13,9 +13,15 @@ from philips_avent.const import (
 
 class TestDPSConstants:
     def test_dps_ids_are_strings(self):
-        for dps in [DPS_TEMPERATURE, DPS_NIGHT_LIGHT, DPS_BRIGHTNESS,
-                     DPS_MOTION_SWITCH, DPS_SOUND_SWITCH, DPS_LULLABY_CONTROL,
-                     DPS_PRIVACY_MODE]:
+        for dps in [
+            DPS_TEMPERATURE,
+            DPS_NIGHT_LIGHT,
+            DPS_BRIGHTNESS,
+            DPS_MOTION_SWITCH,
+            DPS_SOUND_SWITCH,
+            DPS_LULLABY_CONTROL,
+            DPS_PRIVACY_MODE,
+        ]:
             assert isinstance(dps, str)
             assert dps.isdigit()
 

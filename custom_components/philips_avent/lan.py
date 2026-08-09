@@ -1,4 +1,5 @@
 """Tuya LAN protocol client for real-time DPS push updates."""
+
 from __future__ import annotations
 
 import asyncio
@@ -52,9 +53,7 @@ class TuyaLANClient:
 
     async def start(self) -> None:
         self._stop_event.clear()
-        self._task = self._hass.async_create_background_task(
-            self._run(), "tuya_lan_listener"
-        )
+        self._task = self._hass.async_create_background_task(self._run(), "tuya_lan_listener")
 
     @property
     def ip(self) -> str | None:
@@ -80,6 +79,7 @@ class TuyaLANClient:
 
     async def _discover_device(self) -> tuple[str | None, float | None]:
         """Find the monitor on the LAN, keeping the protocol version it announces."""
+
         def _scan():
             devices = tinytuya.deviceScan(maxretry=SCAN_MAXRETRY)
             for ip, info in devices.items():
@@ -106,9 +106,7 @@ class TuyaLANClient:
             result = d._get_socket(False)
             if result is True:
                 return d
-            _LOGGER.debug(
-                "LAN connection to %s at protocol %s refused: %s", ip, version, result
-            )
+            _LOGGER.debug("LAN connection to %s at protocol %s refused: %s", ip, version, result)
             d.close()
         except Exception as ex:  # noqa: BLE001 - tinytuya raises socket, decode and key errors here
             _LOGGER.debug("Direct LAN connection to %s at protocol %s failed: %s", ip, version, ex)
@@ -117,14 +115,10 @@ class TuyaLANClient:
     async def _connect_at_any_version(self, ip: str) -> tinytuya.Device | None:
         """Connect to a known IP, trying the announced protocol then the default."""
         for version in version_candidates(self._version or self._announced_version):
-            device = await self._hass.async_add_executor_job(
-                self._try_direct_connect, ip, version
-            )
+            device = await self._hass.async_add_executor_job(self._try_direct_connect, ip, version)
             if device:
                 if version != self._version:
-                    _LOGGER.info(
-                        "LAN session with %s speaks protocol %s", self._device_id, version
-                    )
+                    _LOGGER.info("LAN session with %s speaks protocol %s", self._device_id, version)
                 self._version = version
                 return device
         return None
@@ -145,9 +139,7 @@ class TuyaLANClient:
         _LOGGER.debug("Scanning LAN for device %s", self._device_id)
         self._ip, announced = await self._discover_device()
         if announced is not None and announced != self._announced_version:
-            _LOGGER.debug(
-                "Device %s announces protocol %s", self._device_id, announced
-            )
+            _LOGGER.debug("Device %s announces protocol %s", self._device_id, announced)
             self._announced_version = announced
         if not self._ip:
             _LOGGER.warning("Device %s not found on LAN", self._device_id)

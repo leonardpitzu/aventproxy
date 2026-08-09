@@ -35,7 +35,7 @@ class TestBuildCamerasPayloadShape:
             "product_id": "selj2idknqhjnids",
             "local_key": "",
             "password": "",
-                "lan_ip": "",
+            "lan_ip": "",
         }
 
     def test_product_id_empty_for_scd973(self):
@@ -122,8 +122,18 @@ class TestBuildBridgeConfig:
     def test_keys_match_the_go_struct(self):
         config = build_bridge_config(**self.BASE)
         assert set(config) == {
-            "signing_key", "sid", "ecode", "partner", "app_key", "device_id",
-            "package_name", "api_host", "uid", "talkback", "bridge_port", "cameras",
+            "signing_key",
+            "sid",
+            "ecode",
+            "partner",
+            "app_key",
+            "device_id",
+            "package_name",
+            "api_host",
+            "uid",
+            "talkback",
+            "bridge_port",
+            "cameras",
         }
 
     def test_cameras_use_the_shared_payload_builder(self):
@@ -173,9 +183,9 @@ class TestOrphanBridgeConfigs:
 
     def test_unrelated_files_are_never_touched(self):
         names = [
-            "philips_avent_bridge.json",       # the legacy single-entry file
+            "philips_avent_bridge.json",  # the legacy single-entry file
             "configuration.yaml",
-            "philips_avent_bridge_.json",      # no entry id in the name
+            "philips_avent_bridge_.json",  # no entry id in the name
             "something_philips_avent_bridge_x.json",
             bridge_config_filename(self.DEAD),
         ]
@@ -230,9 +240,15 @@ class TestTalkbackOption:
     """Two-way audio must be opt-in (issue #72)."""
 
     BASE: ClassVar[dict] = {
-        "signing_key": "sk", "sid": "eu166", "ecode": "E", "partner": "P",
-        "app_key": "AK", "device_id": "D", "package_name": "pkg",
-        "api_host": "a1.tuyaeu.com", "bridge_port": 38554,
+        "signing_key": "sk",
+        "sid": "eu166",
+        "ecode": "E",
+        "partner": "P",
+        "app_key": "AK",
+        "device_id": "D",
+        "package_name": "pkg",
+        "api_host": "a1.tuyaeu.com",
+        "bridge_port": 38554,
         "cameras": [{"deviceId": "abc", "deviceName": "Erik"}],
     }
 

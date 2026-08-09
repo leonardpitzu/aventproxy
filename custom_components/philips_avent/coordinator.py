@@ -1,4 +1,5 @@
 """Data update coordinator for Philips Avent."""
+
 from __future__ import annotations
 
 import contextlib
@@ -113,9 +114,7 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         self.last_lan_dps = dict(dps)
         self.lan_update_sequence += 1
-        _LOGGER.debug(
-            "LAN push for %s: %s", self.camera_name, truncated_dps(dps)
-        )
+        _LOGGER.debug("LAN push for %s: %s", self.camera_name, truncated_dps(dps))
 
         dps = self._hold_lullaby_state(dps)
         merged = {**self.data, **dps}
@@ -145,12 +144,11 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_lullaby_since = time.monotonic()
         if self._lullaby_unsub:
             self._lullaby_unsub()
-        self._lullaby_unsub = async_call_later(
-            self.hass, LULLABY_SETTLE_SECONDS, self._commit_lullaby_state
-        )
+        self._lullaby_unsub = async_call_later(self.hass, LULLABY_SETTLE_SECONDS, self._commit_lullaby_state)
         _LOGGER.debug(
             "Holding lullaby state %r for %s until it settles",
-            value, self.camera_name,
+            value,
+            self.camera_name,
         )
         return rest
 
@@ -166,9 +164,7 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _commit_lullaby_state(self, _now=None) -> None:
         """Apply a held lullaby state once it has stood still."""
         self._lullaby_unsub = None
-        if not lullaby_state_settled(
-            self._pending_lullaby, self._pending_lullaby_since, time.monotonic()
-        ):
+        if not lullaby_state_settled(self._pending_lullaby, self._pending_lullaby_since, time.monotonic()):
             return
         value = self._pending_lullaby
         self._pending_lullaby = None

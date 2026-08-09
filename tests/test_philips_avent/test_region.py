@@ -88,9 +88,23 @@ class TestCountryRouting:
 
     def test_known_calling_codes(self):
         expected = {
-            "AU": "61", "BR": "55", "CA": "1", "CH": "41", "DE": "49", "ES": "34",
-            "FR": "33", "GB": "44", "IN": "91", "JP": "81", "MX": "52", "PL": "48",
-            "RU": "7", "SE": "46", "US": "1", "VA": "39", "ZA": "27",
+            "AU": "61",
+            "BR": "55",
+            "CA": "1",
+            "CH": "41",
+            "DE": "49",
+            "ES": "34",
+            "FR": "33",
+            "GB": "44",
+            "IN": "91",
+            "JP": "81",
+            "MX": "52",
+            "PL": "48",
+            "RU": "7",
+            "SE": "46",
+            "US": "1",
+            "VA": "39",
+            "ZA": "27",
         }
         for country, calling_code in expected.items():
             assert COUNTRY_ROUTING[country][0] == calling_code, country
@@ -117,7 +131,10 @@ class TestLoginCandidates:
 
     def test_unknown_country_probes_in_default_order(self):
         assert login_candidates(None) == [
-            ("eu", "39"), ("us", "1"), ("in", "91"), ("cn", "86"),
+            ("eu", "39"),
+            ("us", "1"),
+            ("in", "91"),
+            ("cn", "86"),
         ]
         assert login_candidates("ZZ") == login_candidates(None)
         assert login_candidates("") == login_candidates(None)
@@ -167,11 +184,13 @@ class TestDomainBlock:
         }
 
     def test_non_eu_account_domain(self):
-        hosts = hosts_from_domain({
-            "mobileApiUrl": "https://a1.tuyaus.com/api.json",
-            "mobileMqttsUrl": "m1.tuyaus.com",
-            "regionCode": "AZ",
-        })
+        hosts = hosts_from_domain(
+            {
+                "mobileApiUrl": "https://a1.tuyaus.com/api.json",
+                "mobileMqttsUrl": "m1.tuyaus.com",
+                "regionCode": "AZ",
+            }
+        )
         assert hosts["api_host"] == "a1.tuyaus.com"
         assert hosts["mqtt_host"] == "m1.tuyaus.com"
         assert hosts["region_code"] == "AZ"

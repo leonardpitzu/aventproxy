@@ -31,6 +31,8 @@ jobs:
       - run: pip install --group lint
       - name: Check for errors
         run: ruff check custom_components/ tools/ tests/
+      - name: Check formatting
+        run: ruff format --check custom_components/ tools/ tests/
 
   tests:
     name: Tests

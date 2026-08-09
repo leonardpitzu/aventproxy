@@ -1,4 +1,5 @@
 """Button entities for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
@@ -34,8 +35,11 @@ class AventLullabyButton(CoordinatorEntity, ButtonEntity):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: PhilipsAventCoordinator, cam_id: str,
-        action: str, icon: str,
+        self,
+        coordinator: PhilipsAventCoordinator,
+        cam_id: str,
+        action: str,
+        icon: str,
     ):
         super().__init__(coordinator)
         self._cam_id = cam_id

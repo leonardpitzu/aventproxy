@@ -6,6 +6,7 @@ a stub parent package gives those modules a package to hang off, so their
 relative imports resolve without ``custom_components/philips_avent/__init__.py``
 - and therefore ``homeassistant`` - ever being imported.
 """
+
 import sys
 import types
 from pathlib import Path

@@ -1,4 +1,5 @@
 """Tuya Mobile SDK API client for Philips Avent."""
+
 from __future__ import annotations
 
 import hashlib
@@ -22,11 +23,30 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-SIGN_PARAM_WHITELIST = frozenset([
-    "a", "v", "lat", "lon", "lang", "deviceId", "appVersion", "ttid",
-    "isH5", "h5Token", "os", "clientId", "postData", "time", "requestId",
-    "et", "n4h5", "sid", "chKey", "sp",
-])
+SIGN_PARAM_WHITELIST = frozenset(
+    [
+        "a",
+        "v",
+        "lat",
+        "lon",
+        "lang",
+        "deviceId",
+        "appVersion",
+        "ttid",
+        "isH5",
+        "h5Token",
+        "os",
+        "clientId",
+        "postData",
+        "time",
+        "requestId",
+        "et",
+        "n4h5",
+        "sid",
+        "chKey",
+        "sp",
+    ]
+)
 
 
 def _md5(data: str) -> str:
@@ -46,9 +66,7 @@ def _sign(params: dict[str, str]) -> str:
     if filtered.get("postData"):
         filtered["postData"] = _swap(_md5(filtered["postData"]))
     param_str = "||".join(f"{k}={filtered[k]}" for k in sorted(filtered))
-    return hmac.new(
-        TUYA_SIGNING_KEY.encode(), param_str.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(TUYA_SIGNING_KEY.encode(), param_str.encode(), hashlib.sha256).hexdigest()
 
 
 def new_device_id() -> str:
@@ -116,9 +134,7 @@ class PhilipsAventAPI:
         self.api_url = api_url or TUYA_API_URL
         self.country_code = country_code
 
-    def _build_params(
-        self, action: str, version: str = "1.0", post_data: Any = None
-    ) -> dict[str, str]:
+    def _build_params(self, action: str, version: str = "1.0", post_data: Any = None) -> dict[str, str]:
         params = {
             "a": action,
             "v": version,
@@ -144,14 +160,15 @@ class PhilipsAventAPI:
             "ttid": f"sdk_international@{TUYA_APP_KEY}",
         }
         if post_data is not None:
-            params["postData"] = (
-                json.dumps(post_data) if not isinstance(post_data, str) else post_data
-            )
+            params["postData"] = json.dumps(post_data) if not isinstance(post_data, str) else post_data
         params["sign"] = _sign(params)
         return params
 
     async def _call(
-        self, action: str, version: str = "1.0", post_data: Any = None,
+        self,
+        action: str,
+        version: str = "1.0",
+        post_data: Any = None,
         extra_params: dict[str, str] | None = None,
     ) -> dict:
         params = self._build_params(action, version, post_data)
@@ -187,8 +204,12 @@ class PhilipsAventAPI:
         )
 
     async def login_password(
-        self, email: str, encrypted_password: str, token: str,
-        country_code: str | None = None, mfa_code: str = "",
+        self,
+        email: str,
+        encrypted_password: str,
+        token: str,
+        country_code: str | None = None,
+        mfa_code: str = "",
     ) -> dict:
         old_sid = self.sid
         self.sid = ""
@@ -210,7 +231,10 @@ class PhilipsAventAPI:
             raise
 
     async def trigger_mfa(
-        self, email: str, encrypted_password: str, token: str,
+        self,
+        email: str,
+        encrypted_password: str,
+        token: str,
         country_code: str | None = None,
     ) -> dict:
         old_sid = self.sid
@@ -271,9 +295,7 @@ class PhilipsAventAPI:
         )
 
     async def get_rtc_config(self, dev_id: str) -> dict:
-        return await self._call(
-            "smartlife.m.rtc.config.get", post_data={"devId": dev_id}
-        )
+        return await self._call("smartlife.m.rtc.config.get", post_data={"devId": dev_id})
 
     async def discover_cameras(self) -> list[dict]:
         """Find all IPC cameras in the account."""
@@ -312,7 +334,8 @@ class PhilipsAventAPI:
                                     _LOGGER.debug(
                                         "Found device via rooms: %s (id=%s, category=%s)",
                                         dev.get("name", dev.get("deviceName", "?")),
-                                        dev_id, dev.get("category", "?"),
+                                        dev_id,
+                                        dev.get("category", "?"),
                                     )
                     if cameras:
                         break
@@ -336,7 +359,8 @@ class PhilipsAventAPI:
                                 _LOGGER.debug(
                                     "Found device via group list: %s (id=%s, category=%s)",
                                     dev.get("name", dev.get("deviceName", "?")),
-                                    dev_id, dev.get("category", "?"),
+                                    dev_id,
+                                    dev.get("category", "?"),
                                 )
                 except TuyaAPIError as e:
                     _LOGGER.debug("Group device list failed for gid %s: %s", gid, e)
@@ -396,9 +420,7 @@ class PhilipsAventAPI:
         return _md5(_md5(TUYA_SIGNING_KEY) + ecode)[8:24]
 
     @staticmethod
-    def derive_mqtt_username(
-        sid: str, ecode: str, partner_identity: str
-    ) -> str:
+    def derive_mqtt_username(sid: str, ecode: str, partner_identity: str) -> str:
         tail = _md5(_md5(TUYA_APP_KEY) + ecode)[-16:]
         return f"{partner_identity}_v1_{TUYA_APP_KEY}_{TUYA_CH_KEY}_mb_{sid}{tail}"
 

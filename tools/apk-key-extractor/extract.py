@@ -32,8 +32,7 @@ def get_cert_sha256(apk_path):
 
 def decompile_apk(apk_path, out_dir):
     print("Decompiling APK with jadx (this may take a minute)...")
-    r = run(["jadx", "-d", out_dir, "--no-res", "--no-debug-info", apk_path],
-            timeout=300)
+    r = run(["jadx", "-d", out_dir, "--no-res", "--no-debug-info", apk_path], timeout=300)
     if r.returncode != 0:
         print(f"jadx warning: {r.stderr[-200:]}")
     return out_dir
@@ -123,15 +122,14 @@ def extract_embedded_key(apk_path, app_secret, pkg_name, cert_sha256):
         except (ValueError, UnicodeDecodeError):
             return None, "cers format not recognized (seed not hex)"
 
-        encrypted = decoded[comma_idx + 1:]
+        encrypted = decoded[comma_idx + 1 :]
 
         # Try XOR decryption with seed
-        decrypted = bytearray(b ^ seed_bytes[i % len(seed_bytes)]
-                              for i, b in enumerate(encrypted))
+        decrypted = bytearray(b ^ seed_bytes[i % len(seed_bytes)] for i, b in enumerate(encrypted))
         text = decrypted.decode("utf-8", errors="replace")
 
         # Search for 32-char alphanumeric candidates
-        candidates = re.findall(r'[a-z0-9]{32}', text)
+        candidates = re.findall(r"[a-z0-9]{32}", text)
         candidates = [c for c in candidates if c != app_secret]
 
         if candidates and pkg_name and cert_sha256 and app_secret:
@@ -159,9 +157,9 @@ def main():
     apk_path = sys.argv[1]
     output_dir = os.environ.get("OUTPUT_DIR", "/output" if os.path.isdir("/output") else ".")
 
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print("Tuya APK Key Extractor")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"APK: {apk_path}")
 
     # 1. Cert SHA-256
@@ -184,11 +182,7 @@ def main():
         print(f"      TTID:          {creds.get('ttid', 'N/A')}")
 
     # 5. Embedded key
-    emb_key, emb_note = extract_embedded_key(
-        apk_path,
-        creds.get("app_secret", ""),
-        pkg, cert
-    )
+    emb_key, emb_note = extract_embedded_key(apk_path, creds.get("app_secret", ""), pkg, cert)
     print(f"[4/5] Embedded Key:  {emb_key or 'FAILED'} ({emb_note})")
 
     # Build signing key
@@ -224,7 +218,7 @@ def main():
     with open(out_file, "w") as f:
         json.dump(output, f, indent=2)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Saved to: {out_file}")
 
     return 0 if status == "complete" else 1

@@ -1,4 +1,5 @@
 """Number entities for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity
@@ -19,10 +20,16 @@ async def async_setup_entry(
     coordinators = entry.runtime_data.coordinators
     entities = []
     for cam_id, coordinator in coordinators.items():
-        entities.extend([
-            AventNumber(coordinator, cam_id, DPS_BRIGHTNESS, "Night Light Brightness", "mdi:brightness-6", 1, 100, 1, "%"),
-            AventNumber(coordinator, cam_id, DPS_LULLABY_VOLUME, "Lullaby Volume", "mdi:volume-medium", 1, 100, 1, "%"),
-        ])
+        entities.extend(
+            [
+                AventNumber(
+                    coordinator, cam_id, DPS_BRIGHTNESS, "Night Light Brightness", "mdi:brightness-6", 1, 100, 1, "%"
+                ),
+                AventNumber(
+                    coordinator, cam_id, DPS_LULLABY_VOLUME, "Lullaby Volume", "mdi:volume-medium", 1, 100, 1, "%"
+                ),
+            ]
+        )
     async_add_entities(entities)
 
 
@@ -30,9 +37,16 @@ class AventNumber(CoordinatorEntity, NumberEntity):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: PhilipsAventCoordinator, cam_id: str,
-        dps_id: str, name: str, icon: str,
-        min_val: float, max_val: float, step: float, unit: str,
+        self,
+        coordinator: PhilipsAventCoordinator,
+        cam_id: str,
+        dps_id: str,
+        name: str,
+        icon: str,
+        min_val: float,
+        max_val: float,
+        step: float,
+        unit: str,
     ):
         super().__init__(coordinator)
         self._cam_id = cam_id

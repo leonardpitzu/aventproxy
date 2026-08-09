@@ -1,4 +1,5 @@
 """Camera entity for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 import logging
@@ -53,9 +54,7 @@ class AventCamera(Camera):
         self.coordinator = coordinator
         self._cam_id = cam_id
         self._attr_unique_id = f"{cam_id}_camera"
-        self._stream_url = build_rtsp_url(
-            bridge_host, bridge_port, coordinator.camera_name, cam_id
-        )
+        self._stream_url = build_rtsp_url(bridge_host, bridge_port, coordinator.camera_name, cam_id)
         self._attr_device_info = build_device_info(coordinator, cam_id)
 
     async def stream_source(self) -> str:
@@ -74,9 +73,7 @@ class AventCamera(Camera):
         load on the camera itself.
         """
         try:
-            return await ffmpeg_get_image(
-                self.hass, self._stream_url, width=width, height=height
-            )
+            return await ffmpeg_get_image(self.hass, self._stream_url, width=width, height=height)
         except Exception:
             _LOGGER.exception("ffmpeg snapshot failed for %s", self._stream_url)
             return None

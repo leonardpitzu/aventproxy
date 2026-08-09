@@ -1,4 +1,5 @@
 """Binary sensor entities for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 import logging
@@ -37,11 +38,13 @@ async def async_setup_entry(
     coordinators = entry.runtime_data.coordinators
     entities = []
     for cam_id, coordinator in coordinators.items():
-        entities.extend([
-            AventLullabyPlaying(coordinator, cam_id),
-            AventMotionDetected(coordinator, cam_id),
-            AventSoundDetected(coordinator, cam_id),
-        ])
+        entities.extend(
+            [
+                AventLullabyPlaying(coordinator, cam_id),
+                AventMotionDetected(coordinator, cam_id),
+                AventSoundDetected(coordinator, cam_id),
+            ]
+        )
     async_add_entities(entities)
 
 
@@ -115,19 +118,13 @@ class AventMotionDetected(CoordinatorEntity, BinarySensorEntity):
             self._last_lan_update_sequence = sequence
             fresh_dps = self.coordinator.last_lan_dps
 
-        if (
-            fresh_dps
-            and fresh_dps.get(DPS_ALERT_EVENT) == "motion_detection"
-            and dps.get(DPS_MOTION_SWITCH, True)
-        ):
+        if fresh_dps and fresh_dps.get(DPS_ALERT_EVENT) == "motion_detection" and dps.get(DPS_MOTION_SWITCH, True):
             return True
 
         timestamp = motion_event_timestamp(dps.get(DPS_ALARM_RECORD))
         if is_new_event(timestamp, self._last_alarm_timestamp, time.time()):
             self._last_alarm_timestamp = timestamp
-            _LOGGER.debug(
-                "Motion alarm record for %s at %s", self.coordinator.camera_name, timestamp
-            )
+            _LOGGER.debug("Motion alarm record for %s at %s", self.coordinator.camera_name, timestamp)
             return True
 
         # Remember a stale record so it cannot fire later as if it were new.
@@ -139,9 +136,7 @@ class AventMotionDetected(CoordinatorEntity, BinarySensorEntity):
     def _schedule_clear(self) -> None:
         if self._clear_unsub:
             self._clear_unsub()
-        self._clear_unsub = async_call_later(
-            self.hass, ALERT_CLEAR_SECONDS, self._clear_alert
-        )
+        self._clear_unsub = async_call_later(self.hass, ALERT_CLEAR_SECONDS, self._clear_alert)
 
     @callback
     def _clear_alert(self, _now=None) -> None:
@@ -213,9 +208,7 @@ class AventSoundDetected(CoordinatorEntity, BinarySensorEntity):
     def _schedule_clear(self) -> None:
         if self._clear_unsub:
             self._clear_unsub()
-        self._clear_unsub = async_call_later(
-            self.hass, ALERT_CLEAR_SECONDS, self._clear_alert
-        )
+        self._clear_unsub = async_call_later(self.hass, ALERT_CLEAR_SECONDS, self._clear_alert)
 
     @callback
     def _clear_alert(self, _now=None) -> None:

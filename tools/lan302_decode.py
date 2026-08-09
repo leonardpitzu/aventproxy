@@ -46,6 +46,7 @@ Notes on the format, each of which will otherwise cost you an afternoon
     - ``json.raw_decode`` parses the ``3.5`` version header as the number 3.5
       and hides the body behind it, so only objects and arrays are accepted.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -71,13 +72,31 @@ SUFFIX_LEN_6699 = 4
 MAX_FRAME = 65535
 
 COMMANDS = {
-    1: "AP_CONFIG", 2: "ACTIVE", 3: "SESS_KEY_NEG_START", 4: "SESS_KEY_NEG_RESP",
-    5: "SESS_KEY_NEG_FINISH", 6: "UNBIND", 7: "CONTROL", 8: "STATUS",
-    9: "HEART_BEAT", 10: "DP_QUERY", 11: "QUERY_WIFI", 12: "TOKEN_BIND",
-    13: "CONTROL_NEW", 14: "ENABLE_WIFI", 16: "DP_QUERY_NEW", 17: "SCENE_EXECUTE",
-    18: "UPDATEDPS", 19: "UDP_NEW", 20: "AP_CONFIG_NEW",
-    32: "IPC_LAN_302", 33: "IPC_LAN_LOCAL_CONFIG", 34: "IPC_LAN_LOCAL_CONFIG_WIFI",
-    35: "BOARDCAST_LPV34", 37: "REQ_DEVINFO", 40: "LAN_EXT_STREAM",
+    1: "AP_CONFIG",
+    2: "ACTIVE",
+    3: "SESS_KEY_NEG_START",
+    4: "SESS_KEY_NEG_RESP",
+    5: "SESS_KEY_NEG_FINISH",
+    6: "UNBIND",
+    7: "CONTROL",
+    8: "STATUS",
+    9: "HEART_BEAT",
+    10: "DP_QUERY",
+    11: "QUERY_WIFI",
+    12: "TOKEN_BIND",
+    13: "CONTROL_NEW",
+    14: "ENABLE_WIFI",
+    16: "DP_QUERY_NEW",
+    17: "SCENE_EXECUTE",
+    18: "UPDATEDPS",
+    19: "UDP_NEW",
+    20: "AP_CONFIG_NEW",
+    32: "IPC_LAN_302",
+    33: "IPC_LAN_LOCAL_CONFIG",
+    34: "IPC_LAN_LOCAL_CONFIG_WIFI",
+    35: "BOARDCAST_LPV34",
+    37: "REQ_DEVINFO",
+    40: "LAN_EXT_STREAM",
 }
 
 PREFIXES = (b"\x00\x00\x55\xaa", b"\x00\x00\x66\x99")
@@ -85,14 +104,14 @@ PREFIXES = (b"\x00\x00\x55\xaa", b"\x00\x00\x66\x99")
 
 # --- pcap -------------------------------------------------------------------
 
+
 def read_pcap(path):
     """Yield (ts, ip_src, sport, ip_dst, dport, tcp_seq, payload) for TCP packets."""
     with open(path, "rb") as fh:
         blob = fh.read()
 
     if blob[:4] == b"\x0a\x0d\x0d\x0a":
-        sys.exit("pcapng not supported; re-save as classic pcap "
-                 "(tcpdump -r in.pcapng -w out.pcap)")
+        sys.exit("pcapng not supported; re-save as classic pcap (tcpdump -r in.pcapng -w out.pcap)")
 
     magic = blob[:4]
     if magic in (b"\xd4\xc3\xb2\xa1", b"\x4d\x3c\xb2\xa1"):
@@ -105,9 +124,9 @@ def read_pcap(path):
     linktype = struct.unpack(endian + "I", blob[20:24])[0]
     off = 24
     while off + 16 <= len(blob):
-        ts_sec, ts_frac, incl, _orig = struct.unpack(endian + "IIII", blob[off:off + 16])
+        ts_sec, ts_frac, incl, _orig = struct.unpack(endian + "IIII", blob[off : off + 16])
         off += 16
-        frame = blob[off:off + incl]
+        frame = blob[off : off + incl]
         off += incl
         pkt = _strip_link(frame, linktype)
         if pkt:
@@ -173,7 +192,7 @@ def reassemble(packets):
         for seq in sorted(by_seq):
             data = by_seq[seq]
             if expected is not None and seq < expected:
-                data = data[expected - seq:]  # trim overlap
+                data = data[expected - seq :]  # trim overlap
                 if not data:
                     continue
             buf += data
@@ -183,6 +202,7 @@ def reassemble(packets):
 
 
 # --- Tuya frames ------------------------------------------------------------
+
 
 def parse_frame_header(data):
     """Header of a Tuya frame, without tinytuya's payload-size ceiling."""
@@ -211,7 +231,7 @@ def iter_frames(stream):
         except Exception:
             pos = nxt + 4
             continue
-        frame = stream[nxt:nxt + header.total_length]
+        frame = stream[nxt : nxt + header.total_length]
         if len(frame) < header.total_length:
             return  # truncated capture tail
         yield nxt, frame, header
@@ -279,7 +299,9 @@ def decode_payload(payload, keys):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("pcap")
-    ap.add_argument("--local-key", default=os.environ.get("AVENT_LOCAL_KEY"), help="device localKey (default: $AVENT_LOCAL_KEY)")
+    ap.add_argument(
+        "--local-key", default=os.environ.get("AVENT_LOCAL_KEY"), help="device localKey (default: $AVENT_LOCAL_KEY)"
+    )
     ap.add_argument("--version", type=float, default=3.5)
     ap.add_argument("--only-302", action="store_true", help="print only frame type 32")
     args = ap.parse_args()
@@ -336,12 +358,15 @@ def main():
             flag = "  <<< IPC_LAN_302" if header.cmd == 32 else ""
             direction = f"{src}:{sport} -> {dst}:{dport}"
             if msg is None:
-                print(f"\n{direction}  seq={header.seqno} {name}({header.cmd})  "f"[undecodable, {header.length}B]{flag}")
+                print(f"\n{direction}  seq={header.seqno} {name}({header.cmd})  [undecodable, {header.length}B]{flag}")
                 continue
             body = decode_payload(msg.payload, keys)
             if isinstance(body, dict):
                 body = json.dumps(body, indent=2, sort_keys=True)
-            print(f"\n{direction}  seq={msg.seqno} {name}({header.cmd}) "f"retcode={msg.retcode} ok={msg.crc_good}{flag}\n{body}")
+            print(
+                f"\n{direction}  seq={msg.seqno} {name}({header.cmd}) "
+                f"retcode={msg.retcode} ok={msg.crc_good}{flag}\n{body}"
+            )
 
 
 def _try_unpack(frame, keys, header=None):

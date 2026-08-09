@@ -19,6 +19,7 @@ timestamp rather than from having seen the push arrive.
 
 No Home Assistant imports here, so the parsing is unit-tested on its own.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,9 +43,7 @@ MOTION_COMMANDS = frozenset({"ipc_motion", "ipc_move", "motion"})
 # diagnostics on #42. Until it was listed here the sound sensor stayed off while
 # the Philips app notified. A cry is a sound alert on a baby monitor, so
 # `ipc_cry` belongs here too.
-SOUND_COMMANDS = frozenset(
-    {"ipc_bang", "ipc_cry", "ipc_sound", "ipc_decibel", "sound", "decibel"}
-)
+SOUND_COMMANDS = frozenset({"ipc_bang", "ipc_cry", "ipc_sound", "ipc_decibel", "sound", "decibel"})
 
 KNOWN_COMMANDS = MOTION_COMMANDS | SOUND_COMMANDS
 
@@ -179,6 +178,7 @@ def is_new_event(
     if last_seen is not None and timestamp <= last_seen:
         return False
     return timestamp >= now - max_age
+
 
 # A lullaby state that flips and flips back inside this window is not a state
 # change, it is the camera re-announcing itself when a stream session ends. Real

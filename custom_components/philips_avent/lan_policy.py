@@ -3,6 +3,7 @@
 Kept free of Home Assistant imports so the decisions can be unit-tested without
 an HA runtime; `lan.py` owns the sockets and calls into here.
 """
+
 from __future__ import annotations
 
 # The monitor closes an idle LAN socket after roughly 30-45 seconds, which shows
@@ -71,6 +72,7 @@ def reconnect_delay(consecutive_failures: int, delay: float = RECONNECT_DELAY) -
         return 0.0
     return delay
 
+
 # Protocol version for the local Tuya session. 3.3 is what the integration has
 # always used and what every model connects with today. The SCD953 announces 3.5
 # in its discovery broadcast (capture on #51), and a session negotiated at the
@@ -102,9 +104,7 @@ def parse_protocol_version(value: object) -> float | None:
     return version if version in SUPPORTED_PROTOCOL_VERSIONS else None
 
 
-def version_candidates(
-    announced: float | None, default: float = PROTOCOL_VERSION_DEFAULT
-) -> list[float]:
+def version_candidates(announced: float | None, default: float = PROTOCOL_VERSION_DEFAULT) -> list[float]:
     """Protocol versions to try for a local session, best guess first.
 
     The announced version comes first because the camera should know what it

@@ -1,8 +1,6 @@
 """Tests for TuyaLANClient."""
 
 
-
-
 class FakeDevice:
     """Mock tinytuya.Device for testing."""
 
@@ -110,9 +108,7 @@ class TestTuyaLANClientUnit:
         last_seen = 0
         detected = 0
 
-        for sequence, payload in enumerate(
-            ({"141": "decibel_upload"}, {"141": "decibel_upload"}), start=1
-        ):
+        for sequence, payload in enumerate(({"141": "decibel_upload"}, {"141": "decibel_upload"}), start=1):
             if sequence != last_seen:
                 last_seen = sequence
                 detected += payload.get("141") == "decibel_upload"

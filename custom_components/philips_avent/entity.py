@@ -1,4 +1,5 @@
 """Shared entity helpers for Philips Avent platforms."""
+
 from __future__ import annotations
 
 from .const import DEFAULT_MODEL, DOMAIN, PRODUCT_ID_TO_MODEL

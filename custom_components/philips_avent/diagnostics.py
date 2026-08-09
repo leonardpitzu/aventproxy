@@ -1,4 +1,5 @@
 """Diagnostics for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,14 +14,11 @@ REDACT_KEYS = {"sid", "ecode", "uid", "partner_identity", "localKey", "local_key
 def _redact(data: dict, keys: set) -> dict:
     """Recursively redact sensitive keys from a dictionary."""
     return {
-        k: "**REDACTED**" if k in keys else (_redact(v, keys) if isinstance(v, dict) else v)
-        for k, v in data.items()
+        k: "**REDACTED**" if k in keys else (_redact(v, keys) if isinstance(v, dict) else v) for k, v in data.items()
     }
 
 
-async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: PhilipsAventConfigEntry
-) -> dict[str, Any]:
+async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: PhilipsAventConfigEntry) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     diag: dict[str, Any] = {
         "config_entry": _redact(dict(entry.data), REDACT_KEYS),

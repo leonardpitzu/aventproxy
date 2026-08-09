@@ -1,4 +1,5 @@
 """Config flow for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 import logging
@@ -87,9 +88,7 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         return PhilipsAventOptionsFlowHandler()
 
-    async def _async_request_mfa_code(
-        self, api: PhilipsAventAPI, email: str, password: str
-    ) -> None:
+    async def _async_request_mfa_code(self, api: PhilipsAventAPI, email: str, password: str) -> None:
         """Run the pre-MFA login sequence against one data center.
 
         Every password submission needs its own single-use RSA token, which is
@@ -97,7 +96,9 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         token_data = await api.get_rsa_token(email)
         encrypted = await self.hass.async_add_executor_job(
-            PhilipsAventAPI.encrypt_password, password, token_data["pbKey"],
+            PhilipsAventAPI.encrypt_password,
+            password,
+            token_data["pbKey"],
         )
 
         # First login attempt — expected to come back asking for MFA
@@ -109,13 +110,13 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         token_data2 = await api.get_rsa_token(email)
         encrypted2 = await self.hass.async_add_executor_job(
-            PhilipsAventAPI.encrypt_password, password, token_data2["pbKey"],
+            PhilipsAventAPI.encrypt_password,
+            password,
+            token_data2["pbKey"],
         )
         await api.trigger_mfa(email, encrypted2, token_data2["token"])
 
-    async def _async_begin_login(
-        self, email: str, password: str, country: str | None
-    ) -> None:
+    async def _async_begin_login(self, email: str, password: str, country: str | None) -> None:
         """Pick the data center that holds the account, then send the MFA code.
 
         A Tuya session is only valid in the data center that issued it, so an
@@ -128,9 +129,7 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         first_error: TuyaAPIError | None = None
 
         for data_center, calling_code in login_candidates(country):
-            api = PhilipsAventAPI(
-                session, api_url=api_url(data_center), country_code=calling_code
-            )
+            api = PhilipsAventAPI(session, api_url=api_url(data_center), country_code=calling_code)
             try:
                 await self._async_request_mfa_code(api, email, password)
             except TuyaAPIError as e:
@@ -139,14 +138,16 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if is_wrong_data_center(e.code):
                     _LOGGER.debug(
                         "Tuya data center %s refused the login (%s), trying the next one",
-                        data_center, e.code,
+                        data_center,
+                        e.code,
                     )
                     continue
                 raise
 
             _LOGGER.info(
                 "Using Tuya data center %s (country code %s) for this account",
-                data_center, calling_code,
+                data_center,
+                calling_code,
             )
             self._api = api
             self._data_center = data_center
@@ -169,9 +170,7 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             default_country = self._country or default_country
 
             try:
-                await self._async_begin_login(
-                    self._email, self._password, self._country
-                )
+                await self._async_begin_login(self._email, self._password, self._country)
                 return await self.async_step_mfa()
 
             except AbortFlow:
@@ -200,12 +199,12 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         token_data = await self._api.get_rsa_token(self._email)
         encrypted = await self.hass.async_add_executor_job(
-            PhilipsAventAPI.encrypt_password, self._password, token_data["pbKey"],
+            PhilipsAventAPI.encrypt_password,
+            self._password,
+            token_data["pbKey"],
         )
 
-        result = await self._api.login_password(
-            self._email, encrypted, token_data["token"], mfa_code=mfa_code
-        )
+        result = await self._api.login_password(self._email, encrypted, token_data["token"], mfa_code=mfa_code)
 
         self._api.sid = result["sid"]
 
@@ -214,7 +213,9 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if reported_host and reported_host != self._api_host:
             _LOGGER.info(
                 "Tuya reports API host %s for this account (region %s); using it instead of %s",
-                reported_host, hosts.get("region_code", "?"), self._api_host,
+                reported_host,
+                hosts.get("region_code", "?"),
+                self._api_host,
             )
         if reported_host:
             self._api_host = reported_host
@@ -310,7 +311,9 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._country = entry_data.get(CONF_COUNTRY, "")
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle reauth confirmation with new credentials."""
         errors: dict[str, str] = {}
         error_code = ""
@@ -323,9 +326,7 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             default_country = self._country or default_country
 
             try:
-                await self._async_begin_login(
-                    self._email, self._password, self._country
-                )
+                await self._async_begin_login(self._email, self._password, self._country)
                 return await self.async_step_reauth_mfa()
 
             except AbortFlow:
@@ -403,24 +404,16 @@ class PhilipsAventOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_port = self.config_entry.options.get(
-            CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT
-        )
-        current_host = self.config_entry.options.get(
-            CONF_BRIDGE_HOST, DEFAULT_BRIDGE_HOST
-        )
-        current_talkback = self.config_entry.options.get(
-            CONF_TALKBACK, DEFAULT_TALKBACK
-        )
+        current_port = self.config_entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT)
+        current_host = self.config_entry.options.get(CONF_BRIDGE_HOST, DEFAULT_BRIDGE_HOST)
+        current_talkback = self.config_entry.options.get(CONF_TALKBACK, DEFAULT_TALKBACK)
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Optional(CONF_BRIDGE_HOST, default=current_host): str,
-                    vol.Optional(CONF_BRIDGE_PORT, default=current_port): vol.All(
-                        int, vol.Range(min=1024, max=65535)
-                    ),
+                    vol.Optional(CONF_BRIDGE_PORT, default=current_port): vol.All(int, vol.Range(min=1024, max=65535)),
                     vol.Optional(CONF_TALKBACK, default=current_talkback): bool,
                 }
             ),

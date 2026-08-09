@@ -80,6 +80,7 @@ Java.perform(function() {
 });
 """
 
+
 def main():
     pkg = sys.argv[1] if len(sys.argv) > 1 else None
 
@@ -125,6 +126,7 @@ def main():
     script.load()
 
     import time
+
     time.sleep(2)
     script.unload()
     session.detach()
@@ -141,14 +143,15 @@ def main():
     # The cert hash has format XX:XX:XX:... (uppercase hex with colons, 95 chars)
     # So we find it by looking for the colon pattern
     import re
-    cert_match = re.search(r'([A-F0-9]{2}(?::[A-F0-9]{2}){31})', signing_key)
+
+    cert_match = re.search(r"([A-F0-9]{2}(?::[A-F0-9]{2}){31})", signing_key)
 
     if cert_match:
         cert_sha256 = cert_match.group(1)
-        before_cert = signing_key[:cert_match.start() - 1]  # remove trailing _
-        after_cert = signing_key[cert_match.end() + 1:]  # remove leading _
+        before_cert = signing_key[: cert_match.start() - 1]  # remove trailing _
+        after_cert = signing_key[cert_match.end() + 1 :]  # remove leading _
         # after_cert = embeddedKey_appSecret
-        embedded_key = after_cert[:after_cert.rfind("_")]
+        embedded_key = after_cert[: after_cert.rfind("_")]
         pkg_name = before_cert
     else:
         print("WARNING: Could not parse signing key components")
@@ -166,16 +169,16 @@ def main():
         },
         "app_key": app_key,
         "app_secret": app_secret,
-        "note": "signing_key = HMAC-SHA256 key for Tuya mobile SDK API requests"
+        "note": "signing_key = HMAC-SHA256 key for Tuya mobile SDK API requests",
     }
 
     out_file = f"tuya_keys_{pkg_name.replace('.', '_')}.json"
     with open(out_file, "w") as f:
         json.dump(output, f, indent=2)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Tuya Signing Key Extracted Successfully")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Package:      {pkg_name}")
     print(f"App Key:      {app_key}")
     print(f"App Secret:   {app_secret}")

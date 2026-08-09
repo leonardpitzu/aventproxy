@@ -30,11 +30,30 @@ from Crypto.PublicKey import RSA
 # Signing
 # ---------------------------------------------------------------------------
 
-SIGN_PARAM_WHITELIST = frozenset([
-    "a", "v", "lat", "lon", "lang", "deviceId", "appVersion", "ttid",
-    "isH5", "h5Token", "os", "clientId", "postData", "time", "requestId",
-    "et", "n4h5", "sid", "chKey", "sp",
-])
+SIGN_PARAM_WHITELIST = frozenset(
+    [
+        "a",
+        "v",
+        "lat",
+        "lon",
+        "lang",
+        "deviceId",
+        "appVersion",
+        "ttid",
+        "isH5",
+        "h5Token",
+        "os",
+        "clientId",
+        "postData",
+        "time",
+        "requestId",
+        "et",
+        "n4h5",
+        "sid",
+        "chKey",
+        "sp",
+    ]
+)
 
 
 def _swap_sign_string(s: str) -> str:
@@ -58,6 +77,7 @@ def _compute_sign(params: dict[str, str], signing_key: str) -> str:
 # Client
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TuyaClient:
     """Tuya Mobile SDK API client with HMAC-SHA256 signing."""
@@ -71,8 +91,7 @@ class TuyaClient:
     sdk_version: str = "6.7.0"
     sid: str = ""
 
-    def _build_params(self, action: str, version: str = "1.0",
-                      post_data: Any = None) -> dict[str, str]:
+    def _build_params(self, action: str, version: str = "1.0", post_data: Any = None) -> dict[str, str]:
         params = {
             "a": action,
             "v": version,
@@ -98,14 +117,11 @@ class TuyaClient:
             "ttid": f"sdk_international@{self.app_key}",
         }
         if post_data is not None:
-            params["postData"] = (
-                json.dumps(post_data) if not isinstance(post_data, str) else post_data
-            )
+            params["postData"] = json.dumps(post_data) if not isinstance(post_data, str) else post_data
         params["sign"] = _compute_sign(params, self.signing_key)
         return params
 
-    def call(self, action: str, version: str = "1.0",
-             post_data: Any = None) -> dict:
+    def call(self, action: str, version: str = "1.0", post_data: Any = None) -> dict:
         """Make an API call. Returns the full JSON response."""
         params = self._build_params(action, version, post_data)
         r = requests.post(
@@ -119,12 +135,10 @@ class TuyaClient:
         )
         resp = r.json()
         if not resp.get("success"):
-            raise TuyaAPIError(resp.get("errorCode", "UNKNOWN"),
-                               resp.get("errorMsg", "Unknown error"))
+            raise TuyaAPIError(resp.get("errorCode", "UNKNOWN"), resp.get("errorMsg", "Unknown error"))
         return resp
 
-    def call_result(self, action: str, version: str = "1.0",
-                    post_data: Any = None) -> Any:
+    def call_result(self, action: str, version: str = "1.0", post_data: Any = None) -> Any:
         """Make an API call and return just the result field."""
         return self.call(action, version, post_data)["result"]
 
@@ -133,7 +147,8 @@ class TuyaClient:
     def _get_rsa_token(self, email: str, country_code: str = "39") -> dict:
         """Get a single-use RSA token for password encryption."""
         return self.call_result(
-            "thing.m.user.username.token.get", "2.0",
+            "thing.m.user.username.token.get",
+            "2.0",
             {"countryCode": country_code, "username": email, "isUid": False},
         )
 
@@ -145,8 +160,7 @@ class TuyaClient:
         cipher = PKCS1_v1_5.new(rsa_key)
         return cipher.encrypt(md5_pass.encode()).hex()
 
-    def login(self, email: str, password: str,
-              country_code: str = "39", mfa_code: str = "") -> str:
+    def login(self, email: str, password: str, country_code: str = "39", mfa_code: str = "") -> str:
         """
         Login with email + password + MFA.
 
@@ -163,7 +177,8 @@ class TuyaClient:
         self.sid = ""  # login calls don't use SID
         try:
             result = self.call_result(
-                "thing.m.user.email.password.login", "3.0",
+                "thing.m.user.email.password.login",
+                "3.0",
                 {
                     "countryCode": country_code,
                     "email": email,
@@ -179,8 +194,7 @@ class TuyaClient:
             self.sid = old_sid
             raise
 
-    def trigger_mfa(self, email: str, password: str,
-                    country_code: str = "39") -> dict:
+    def trigger_mfa(self, email: str, password: str, country_code: str = "39") -> dict:
         """Request a MFA code to be sent to the user's email."""
         token_data = self._get_rsa_token(email, country_code)
         encrypted = self._encrypt_password(password, token_data["pbKey"])
@@ -189,7 +203,8 @@ class TuyaClient:
         self.sid = ""
         try:
             return self.call_result(
-                "thing.m.user.username.mfa.code.get", "1.0",
+                "thing.m.user.username.mfa.code.get",
+                "1.0",
                 {
                     "countryCode": country_code,
                     "username": email,
@@ -207,20 +222,19 @@ class TuyaClient:
         old_sid = self.sid
         self.sid = ""
         try:
-            self.call("thing.m.user.email.code.send", "1.0",
-                      {"email": email, "countryCode": country_code, "type": 1})
+            self.call("thing.m.user.email.code.send", "1.0", {"email": email, "countryCode": country_code, "type": 1})
             return True
         finally:
             self.sid = old_sid
 
-    def login_otp(self, email: str, code: str,
-                  country_code: str = "39") -> str:
+    def login_otp(self, email: str, code: str, country_code: str = "39") -> str:
         """Login with a passwordless OTP code. Returns SID."""
         old_sid = self.sid
         self.sid = ""
         try:
             result = self.call_result(
-                "thing.m.user.email.code.login", "1.0",
+                "thing.m.user.email.code.login",
+                "1.0",
                 {"email": email, "code": code, "countryCode": country_code},
             )
             self.sid = result["sid"]
@@ -248,7 +262,8 @@ class TuyaClient:
     def set_dps(self, dev_id: str, dps: dict) -> dict:
         """Set one or more DPS values on a device."""
         return self.call_result(
-            "tuya.m.device.dp.publish", "2.0",
+            "tuya.m.device.dp.publish",
+            "2.0",
             {"devId": dev_id, "gwId": dev_id, "dps": dps},
         )
 
@@ -257,13 +272,15 @@ class TuyaClient:
     def get_rtc_config(self, dev_id: str) -> dict:
         """Get WebRTC configuration (STUN/TURN, ICE, AES key, session)."""
         return self.call_result(
-            "smartlife.m.rtc.config.get", post_data={"devId": dev_id},
+            "smartlife.m.rtc.config.get",
+            post_data={"devId": dev_id},
         )
 
     def get_p2p_prelink(self, dev_id: str) -> bool:
         """Signal P2P pre-connection intent."""
         return self.call_result(
-            "smartlife.m.p2p.main.pre.link.get", post_data={"devId": dev_id},
+            "smartlife.m.p2p.main.pre.link.get",
+            post_data={"devId": dev_id},
         )
 
     def get_mqtt_token(self) -> dict:

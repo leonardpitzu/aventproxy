@@ -7,6 +7,7 @@ tools/lan302_decode.py to pick up.
 
     tools/fetch_local_key.py --device-id bfc4beffe9d8009b8fpguq
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,9 +27,7 @@ def const(name: str) -> str:
     """Read a string constant out of const.py without importing Home Assistant."""
     tree = ast.parse((REPO / "custom_components" / "philips_avent" / "const.py").read_text())
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == name for t in node.targets
-        ):
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
             return ast.literal_eval(node.value)
     raise SystemExit(f"{name} not found in const.py")
 

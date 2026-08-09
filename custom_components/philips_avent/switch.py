@@ -1,4 +1,5 @@
 """Switch entities for Philips Avent Baby Monitor."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -26,12 +27,14 @@ async def async_setup_entry(
     coordinators = entry.runtime_data.coordinators
     entities = []
     for cam_id, coordinator in coordinators.items():
-        entities.extend([
-            AventSwitch(coordinator, cam_id, DPS_NIGHT_LIGHT, "Night Light", "mdi:lightbulb-night"),
-            AventSwitch(coordinator, cam_id, DPS_MOTION_SWITCH, "Motion Alert", "mdi:motion-sensor"),
-            AventSwitch(coordinator, cam_id, DPS_SOUND_SWITCH, "Sound Alert", "mdi:ear-hearing"),
-            AventEnumSwitch(coordinator, cam_id, DPS_PRIVACY_MODE, "Privacy Mode", "mdi:eye-off"),
-        ])
+        entities.extend(
+            [
+                AventSwitch(coordinator, cam_id, DPS_NIGHT_LIGHT, "Night Light", "mdi:lightbulb-night"),
+                AventSwitch(coordinator, cam_id, DPS_MOTION_SWITCH, "Motion Alert", "mdi:motion-sensor"),
+                AventSwitch(coordinator, cam_id, DPS_SOUND_SWITCH, "Sound Alert", "mdi:ear-hearing"),
+                AventEnumSwitch(coordinator, cam_id, DPS_PRIVACY_MODE, "Privacy Mode", "mdi:eye-off"),
+            ]
+        )
     async_add_entities(entities)
 
 
@@ -39,8 +42,12 @@ class AventSwitch(CoordinatorEntity, SwitchEntity):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: PhilipsAventCoordinator, cam_id: str,
-        dps_id: str, name: str, icon: str,
+        self,
+        coordinator: PhilipsAventCoordinator,
+        cam_id: str,
+        dps_id: str,
+        name: str,
+        icon: str,
     ):
         super().__init__(coordinator)
         self._cam_id = cam_id
