@@ -1,4 +1,3 @@
-ARG BUILD_FROM
 # The Supervisor builds this on the Home Assistant host, natively for that
 # host's architecture, with the app folder as the Docker context — which is why
 # the Go module lives alongside this file rather than at the repo root.
@@ -19,7 +18,16 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags="-s -w -X main.version=${BUILD_VERSION}" \
     -o /avent-webrtc-bridge .
 
-FROM ${BUILD_FROM}
+# Multi-platform manifest, so one tag covers both amd64 and aarch64. Alpine,
+# not Debian: the bridge is a static CGO_ENABLED=0 binary, so the runtime layer
+# only has to supply a shell and CA certificates.
+FROM ghcr.io/home-assistant/base:3.22
+
+LABEL \
+    org.opencontainers.image.title="Philips Avent WebRTC Bridge" \
+    org.opencontainers.image.description="Streams Philips Avent baby monitors over RTSP" \
+    org.opencontainers.image.source="https://github.com/leonardpitzu/aventproxy" \
+    org.opencontainers.image.licenses="MIT"
 
 # The static binary needs nothing else; ca-certificates is for the HTTPS calls
 # to Tuya and is not in a bare alpine image.

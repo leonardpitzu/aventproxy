@@ -101,7 +101,6 @@ jobs:
           load: true
           tags: aventproxy-bridge:ci
           build-args: |
-            BUILD_FROM=alpine:3.22
             BUILD_VERSION=ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
