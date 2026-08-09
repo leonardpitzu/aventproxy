@@ -55,13 +55,13 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: avent-webrtc-bridge
+        working-directory: aventproxy-bridge-addon/avent-webrtc-bridge
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
-          cache-dependency-path: avent-webrtc-bridge/go.sum
+          cache-dependency-path: aventproxy-bridge-addon/avent-webrtc-bridge/go.sum
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -81,62 +81,33 @@ jobs:
       - name: Verify binary
         run: ./avent-webrtc-bridge --help
 
-  addon:
-    name: Add-on image
+  app:
+    name: App image
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     needs: [tests, bridge]
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v7
-      # The Supervisor builds with the add-on folder as context, so the bridge
-      # source has to sit inside it.
-      - name: Stage bridge source
-        run: cp -r avent-webrtc-bridge aventproxy-bridge-addon/avent-webrtc-bridge
-
-      - name: Read add-on version
-        id: addon
-        run: awk -F'"' '/^version:/{print "version=" $2}' aventproxy-bridge-addon/config.yaml >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # The Supervisor pulls <image>:<version from config.yaml>, so that tag is
-      # the one that matters; bumping the version is what surfaces an update.
-      - name: Build and push
+      # Nothing is published: the Supervisor builds this on the Home Assistant
+      # host from config.yaml's version. This job only proves it still builds,
+      # with the same context the Supervisor uses.
+      - name: Build app image
         uses: docker/build-push-action@v7
         with:
           context: aventproxy-bridge-addon
-          platforms: linux/amd64,linux/arm64
-          # The published image is what the Supervisor pulls, so the runtime
-          # base has to be multi-arch. build.yaml names the per-arch Home
-          # Assistant bases, which are this same alpine release.
-          build-args: BUILD_FROM=alpine:3.22
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ghcr.io/leonardpitzu/aventproxy-bridge:${{ steps.addon.outputs.version }}
-            ghcr.io/leonardpitzu/aventproxy-bridge:latest
+          push: false
+          load: true
+          tags: aventproxy-bridge:ci
+          build-args: |
+            BUILD_FROM=alpine:3.22
+            BUILD_VERSION=ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Prune untagged images
-        if: github.event_name != 'pull_request'
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: aventproxy-bridge
-          package-type: container
-          min-versions-to-keep: 5
-          delete-only-untagged-versions: "true"
+      - name: Verify the built binary reports its version
+        run: docker run --rm aventproxy-bridge:ci avent-webrtc-bridge --version
 
   hacs:
     name: HACS Validation

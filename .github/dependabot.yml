@@ -2,7 +2,7 @@ version: 2
 updates:
   # Go bridge: pion moves fast and this is a network daemon on the LAN.
   - package-ecosystem: gomod
-    directory: /avent-webrtc-bridge
+    directory: /aventproxy-bridge-addon/avent-webrtc-bridge
     schedule:
       interval: weekly
       day: monday

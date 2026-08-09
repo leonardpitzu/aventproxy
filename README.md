@@ -395,7 +395,7 @@ pytest
 ruff check custom_components/ tools/ tests/
 
 # Go bridge
-cd avent-webrtc-bridge
+cd aventproxy-bridge-addon/avent-webrtc-bridge
 go build ./... && go vet ./... && go test -race ./... && gofmt -l .
 ./avent-webrtc-bridge direct --help
 ```

@@ -15,7 +15,7 @@ dist/
 *~
 
 # Compiled bridge binary
-avent-webrtc-bridge/avent-webrtc-bridge
+aventproxy-bridge-addon/avent-webrtc-bridge/avent-webrtc-bridge
 
 # Reverse-engineering inputs: large, copyrighted, or full of credentials
 *.apk

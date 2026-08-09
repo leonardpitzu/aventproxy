@@ -3,3 +3,9 @@
 build_from:
   amd64: ghcr.io/home-assistant/amd64-base:3.22
   aarch64: ghcr.io/home-assistant/aarch64-base:3.22
+labels:
+  org.opencontainers.image.title: Philips Avent WebRTC Bridge
+  org.opencontainers.image.description: >-
+    Streams Philips Avent baby monitors over RTSP
+  org.opencontainers.image.source: https://github.com/leonardpitzu/aventproxy
+  org.opencontainers.image.licenses: MIT
