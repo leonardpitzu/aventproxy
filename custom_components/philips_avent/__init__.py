@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
@@ -208,6 +208,15 @@ async def _setup_camera(
 
 async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry) -> bool:
     """Set up Philips Avent from a config entry."""
+    if CONF_PASSWORD in entry.data:
+        # Older entries stored the account password, which nothing ever read
+        # back: re-auth asks for it again. Drop it rather than keep a plaintext
+        # credential in .storage.
+        data = dict(entry.data)
+        data.pop(CONF_PASSWORD)
+        hass.config_entries.async_update_entry(entry, data=data)
+        _LOGGER.info("Removed the stored account password from this entry, it was never used")
+
     api = PhilipsAventAPI(
         async_get_clientsession(hass),
         sid=entry.data[CONF_SID],

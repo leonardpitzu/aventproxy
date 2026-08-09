@@ -275,7 +275,6 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     title=f"Avent - {user_info.get('nickname', self._email)}",
                     data={
                         CONF_EMAIL: self._email,
-                        CONF_PASSWORD: self._password,
                         CONF_SID: sid,
                         CONF_ECODE: result.get("ecode", ""),
                         CONF_PARTNER: result.get("partnerIdentity", ""),
@@ -359,19 +358,17 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 # Update the config entry with new credentials
                 entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    data={
-                        **entry.data,
-                        CONF_EMAIL: self._email,
-                        CONF_PASSWORD: self._password,
-                        CONF_SID: result["sid"],
-                        CONF_ECODE: result.get("ecode", ""),
-                        CONF_PARTNER: result.get("partnerIdentity", ""),
-                        CONF_UID: result["uid"],
-                        **self._region_data(),
-                    },
-                )
+                data = {
+                    **entry.data,
+                    CONF_EMAIL: self._email,
+                    CONF_SID: result["sid"],
+                    CONF_ECODE: result.get("ecode", ""),
+                    CONF_PARTNER: result.get("partnerIdentity", ""),
+                    CONF_UID: result["uid"],
+                    **self._region_data(),
+                }
+                data.pop(CONF_PASSWORD, None)
+                self.hass.config_entries.async_update_entry(entry, data=data)
                 await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 

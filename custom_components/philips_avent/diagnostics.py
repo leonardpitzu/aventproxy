@@ -4,24 +4,29 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
 from .coordinator import PhilipsAventConfigEntry
 
-REDACT_KEYS = {"sid", "ecode", "uid", "partner_identity", "localKey", "local_key", "password", "email"}
-
-
-def _redact(data: dict, keys: set) -> dict:
-    """Recursively redact sensitive keys from a dictionary."""
-    return {
-        k: "**REDACTED**" if k in keys else (_redact(v, keys) if isinstance(v, dict) else v) for k, v in data.items()
-    }
+# `cameras` is a list of dicts, so the redactor has to walk lists as well as
+# dicts: local_key and password are the monitor's LAN streaming credentials.
+REDACT_KEYS = {
+    "sid",
+    "ecode",
+    "uid",
+    "partner_identity",
+    "localKey",
+    "local_key",
+    "password",
+    "email",
+}
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: PhilipsAventConfigEntry) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     diag: dict[str, Any] = {
-        "config_entry": _redact(dict(entry.data), REDACT_KEYS),
+        "config_entry": async_redact_data(dict(entry.data), REDACT_KEYS),
         "devices": {},
     }
 
@@ -32,7 +37,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Philips
             "lan_connected": coordinator.lan_connected,
             "update_interval": str(coordinator.update_interval),
             "rssi": coordinator.rssi,
-            "device_info": _redact(coordinator.device_info, REDACT_KEYS) if coordinator.device_info else None,
+            "device_info": async_redact_data(coordinator.device_info, REDACT_KEYS) if coordinator.device_info else None,
         }
 
     return diag
