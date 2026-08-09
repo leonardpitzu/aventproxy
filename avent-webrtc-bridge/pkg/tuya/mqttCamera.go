@@ -175,8 +175,8 @@ func (c *MQTTCameraClient) onError(err error) {
 	}
 }
 
-func (c *MQTTCameraClient) sendMqttMessage(messageType string, protocol int, transactionID string, data interface{}) error {
-	if c.mqttClient.closed {
+func (c *MQTTCameraClient) sendMqttMessage(messageType string, protocol int, transactionID string, data any) error {
+	if c.mqttClient.closed.Load() {
 		return errors.New("mqtt client is closed, send mqtt message fail")
 	}
 

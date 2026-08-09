@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,9 +40,10 @@ type RTSPServer struct {
 	mutex          sync.RWMutex
 	ctx            context.Context
 	cancel         context.CancelFunc
-	running        bool
-	MobileClient   *tuya.MobileSDKClient
-	mqttManager    *MQTTManager
+	// running is read by the accept loop, which holds no lock.
+	running      atomic.Bool
+	MobileClient *tuya.MobileSDKClient
+	mqttManager  *MQTTManager
 
 	// Talkback asks the camera for two-way audio on every stream. Off by
 	// default; see WebRTCBridge.Talkback and issue #72.
@@ -122,26 +124,24 @@ func NewRTSPServer(port int, storageManager *storage.StorageManager) *RTSPServer
 		streams:        make(map[string]*CameraStream),
 		ctx:            ctx,
 		cancel:         cancel,
-		running:        false,
 	}
 }
-
 func (s *RTSPServer) Start() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if s.running {
+	if s.running.Load() {
 		return errors.New("server is already running")
 	}
 
 	lc := net.ListenConfig{Control: reuseAddrControl}
 	listener, err := lc.Listen(s.ctx, "tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
-		return fmt.Errorf("failed to listen on port %d: %v", s.port, err)
+		return fmt.Errorf("failed to listen on port %d: %w", s.port, err)
 	}
 
 	s.listener = listener
-	s.running = true
+	s.running.Store(true)
 
 	if s.MobileClient != nil {
 		s.mqttManager = NewMQTTManager(s.MobileClient)
@@ -168,14 +168,14 @@ func (s *RTSPServer) Stop() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if !s.running {
+	if !s.running.Load() {
 		return errors.New("server is not running")
 	}
 
 	core.Logger.Info().Msg("Stopping RTSP server...")
 
 	// Cancel context to stop all goroutines
-	s.running = false
+	s.running.Store(false)
 	s.cancel()
 
 	// Close listener
@@ -201,9 +201,7 @@ func (s *RTSPServer) Stop() error {
 }
 
 func (s *RTSPServer) IsRunning() bool {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	return s.running
+	return s.running.Load()
 }
 
 func (s *RTSPServer) GetPort() int {
@@ -216,14 +214,14 @@ func (s *RTSPServer) GetStats() ServerStats {
 
 	activeStreams := 0
 	for _, stream := range s.streams {
-		if stream.active {
+		if stream.isActive() {
 			activeStreams++
 		}
 	}
 
 	return ServerStats{
 		Port:         s.port,
-		Running:      s.running,
+		Running:      s.running.Load(),
 		ClientCount:  len(s.clients),
 		StreamCount:  activeStreams,
 		TotalStreams: len(s.streams),
@@ -239,14 +237,14 @@ type ServerStats struct {
 }
 
 func (s *RTSPServer) acceptConnections() {
-	for s.running {
+	for s.running.Load() {
 		select {
 		case <-s.ctx.Done():
 			return
 		default:
 			conn, err := s.listener.Accept()
 			if err != nil {
-				if s.running {
+				if s.running.Load() {
 					core.Logger.Error().Err(err).Msg("Error accepting connection")
 				}
 				continue
@@ -383,7 +381,7 @@ func (s *RTSPServer) getOrCreateStream(camera *storage.CameraInfo, streamResolut
 	if s.mqttManager != nil {
 		mqttClient, err := s.mqttManager.GetClient(camera.DeviceID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get MQTT client: %v", err)
+			return nil, fmt.Errorf("failed to get MQTT client: %w", err)
 		}
 		stream.webrtcBridge.SetMQTTClient(mqttClient)
 	}
@@ -446,8 +444,11 @@ func (s *RTSPServer) printAvailableEndpoints() error {
 
 	for _, camera := range cameras {
 		var skill *tuya.Skill
-		json.Unmarshal([]byte(camera.Skill), &skill)
-
+		if camera.Skill != "" {
+			if err := json.Unmarshal([]byte(camera.Skill), &skill); err != nil {
+				core.Logger.Debug().Err(err).Msgf("Could not parse skill for %s, assuming one resolution", camera.DeviceName)
+			}
+		}
 		supportClarity := skill != nil && (skill.WebRTC&(1<<5)) != 0
 		baseUrl := fmt.Sprintf("rtsp://localhost:%d%s", s.port, camera.RTSPPath)
 
@@ -476,14 +477,25 @@ func (s *RTSPServer) cleanupRoutine() {
 	}
 }
 
+// idleFor reports whether the stream has served nobody for at least d.
+func (cs *CameraStream) idleFor(d time.Duration) bool {
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+	return len(cs.clients) == 0 && time.Since(cs.lastActivity) > d
+}
+
+func (cs *CameraStream) isActive() bool {
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+	return cs.active
+}
+
 func (s *RTSPServer) cleanupInactiveStreams() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	now := time.Now()
 	for deviceID, stream := range s.streams {
-		// Remove streams inactive for more than 5 minutes
-		if now.Sub(stream.lastActivity) > 5*time.Minute && len(stream.clients) == 0 {
+		if stream.idleFor(5 * time.Minute) {
 			core.Logger.Trace().Msgf("Cleaning up inactive stream for camera: %s", stream.camera.DeviceName)
 			stream.Stop()
 			delete(s.streams, deviceID)
@@ -556,8 +568,16 @@ func (cs *CameraStream) RemoveClient(sessionID string) {
 }
 
 func (cs *CameraStream) Stop() {
-	// Clear all clients first
+	// Snapshot first: RemoveClient deletes from this map and takes the lock, so
+	// ranging it directly races with a client connecting.
+	cs.mutex.RLock()
+	sessions := make([]string, 0, len(cs.clients))
 	for sessionID := range cs.clients {
+		sessions = append(sessions, sessionID)
+	}
+	cs.mutex.RUnlock()
+
+	for _, sessionID := range sessions {
 		cs.RemoveClient(sessionID)
 	}
 

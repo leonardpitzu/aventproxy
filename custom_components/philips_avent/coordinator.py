@@ -174,27 +174,34 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("Lullaby state settled at %r for %s", value, self.camera_name)
         self.async_set_updated_data({**self.data, DPS_LULLABY_STATE: value})
 
-    async def set_dps(self, dps: dict) -> dict:
-        """Send DPS command via LAN for instant response, plus REST for cloud sync."""
+    @callback
+    def _apply_optimistic(self, dps: dict, extra: dict | None = None) -> None:
+        """Show a command's effect before the monitor confirms it."""
+        if self.data is None:
+            return
+        optimistic = {str(k): v for k, v in dps.items()}
+        lullaby_cmd = optimistic.get(DPS_LULLABY_CONTROL)
+        if lullaby_cmd in LULLABY_STATE_MAP:
+            optimistic[DPS_LULLABY_STATE] = LULLABY_STATE_MAP[lullaby_cmd]
+        if extra:
+            optimistic.update(extra)
+        self.async_set_updated_data({**self.data, **optimistic})
+
+    async def set_dps(self, dps: dict, *, optimistic: dict | None = None) -> dict:
+        """Send DPS command via LAN for instant response, plus REST for cloud sync.
+
+        `optimistic` carries values the monitor reports back under a different
+        key than the one written, such as the lullaby track in DPS 248.
+        """
         if self._lan_client and self._lan_client.connected:
             result = await self._lan_client.set_dps(dps)
             if result:
                 _LOGGER.debug("DPS sent via LAN for %s: %s", self.camera_name, dps)
-                if self.data is not None:
-                    optimistic = {str(k): v for k, v in dps.items()}
-                    lullaby_cmd = optimistic.get(DPS_LULLABY_CONTROL)
-                    if lullaby_cmd in LULLABY_STATE_MAP:
-                        optimistic[DPS_LULLABY_STATE] = LULLABY_STATE_MAP[lullaby_cmd]
-                    self.async_set_updated_data({**self.data, **optimistic})
+                self._apply_optimistic(dps, optimistic)
                 with contextlib.suppress(TuyaAPIError):
                     await self.api.set_dps(self.camera_id, dps)
                 return result
-        if self.data is not None:
-            optimistic = {str(k): v for k, v in dps.items()}
-            lullaby_cmd = optimistic.get(DPS_LULLABY_CONTROL)
-            if lullaby_cmd in LULLABY_STATE_MAP:
-                optimistic[DPS_LULLABY_STATE] = LULLABY_STATE_MAP[lullaby_cmd]
-            self.async_set_updated_data({**self.data, **optimistic})
+        self._apply_optimistic(dps, optimistic)
         return await self.api.set_dps(self.camera_id, dps)
 
     async def _refresh_rssi(self) -> None:

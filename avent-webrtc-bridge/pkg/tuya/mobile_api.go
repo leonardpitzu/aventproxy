@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"avent-webrtc-bridge/pkg/core"
+
 	"github.com/google/uuid"
 )
 
@@ -31,6 +33,9 @@ type MobileSDKClient struct {
 	PartnerIdentity string
 	UID             string
 	PackageName     string
+
+	// One client for every call, so connections and TLS sessions are reused.
+	http http.Client
 }
 
 var signKeyWhitelist = []string{
@@ -76,6 +81,7 @@ func NewMobileSDKClient(signingKey, sid, appKey, deviceID, chKey string) *Mobile
 		BaseURL:    APIBaseURL(""),
 		AppVersion: "1.8.0",
 		SDKVersion: "6.7.0",
+		http:       http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -121,7 +127,7 @@ func (c *MobileSDKClient) sign(params map[string]string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (c *MobileSDKClient) buildParams(action, version string, postData interface{}) map[string]string {
+func (c *MobileSDKClient) buildParams(action, version string, postData any) map[string]string {
 	t := fmt.Sprintf("%d", time.Now().Unix())
 	params := map[string]string{
 		"a":                 action,
@@ -154,7 +160,12 @@ func (c *MobileSDKClient) buildParams(action, version string, postData interface
 		case string:
 			pdStr = v
 		default:
-			b, _ := json.Marshal(v)
+			b, err := json.Marshal(v)
+			if err != nil {
+				// Signing over an empty body yields a request Tuya rejects with an
+				// opaque error, so say what actually happened.
+				core.Logger.Error().Err(err).Msg("Could not encode Tuya postData")
+			}
 			pdStr = string(b)
 		}
 		params["postData"] = pdStr
@@ -164,7 +175,7 @@ func (c *MobileSDKClient) buildParams(action, version string, postData interface
 	return params
 }
 
-func (c *MobileSDKClient) Call(action, version string, postData interface{}) (json.RawMessage, error) {
+func (c *MobileSDKClient) Call(action, version string, postData any) (json.RawMessage, error) {
 	params := c.buildParams(action, version, postData)
 
 	form := url.Values{}
@@ -179,8 +190,7 @@ func (c *MobileSDKClient) Call(action, version string, postData interface{}) (js
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", fmt.Sprintf("Thing-UA=APP/Android/%s/SDK/%s", c.AppVersion, c.SDKVersion))
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}

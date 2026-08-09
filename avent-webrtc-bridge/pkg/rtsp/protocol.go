@@ -172,7 +172,7 @@ func (s *RTSPServer) handleInterleavedRTP(client *RTSPClient) error {
 		// Parse und forward backchannel packet
 		packet := &rtp.Packet{}
 		if err := packet.Unmarshal(data); err != nil {
-			return fmt.Errorf("failed to parse backchannel RTP packet: %v", err)
+			return fmt.Errorf("failed to parse backchannel RTP packet: %w", err)
 		}
 
 		// Forward to WebRTC bridge
@@ -190,7 +190,7 @@ func (s *RTSPServer) parseRTSPRequestFromReader(reader *bufio.Reader) (*RTSPRequ
 	// Read request line
 	line, _, err := reader.ReadLine()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read request line: %v", err)
+		return nil, fmt.Errorf("failed to read request line: %w", err)
 	}
 
 	parts := strings.Split(string(line), " ")
@@ -209,7 +209,7 @@ func (s *RTSPServer) parseRTSPRequestFromReader(reader *bufio.Reader) (*RTSPRequ
 	for {
 		line, _, err := reader.ReadLine()
 		if err != nil {
-			return nil, fmt.Errorf("failed to read header: %v", err)
+			return nil, fmt.Errorf("failed to read header: %w", err)
 		}
 
 		lineStr := string(line)

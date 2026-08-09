@@ -136,7 +136,7 @@ func newShowCountryCodesCmd() *cobra.Command {
 func runListUsers(cmd *cobra.Command, args []string) error {
 	users, err := storageManager.ListUsers()
 	if err != nil {
-		return fmt.Errorf("failed to list users: %v", err)
+		return fmt.Errorf("failed to list users: %w", err)
 	}
 
 	if len(users) == 0 {
@@ -203,7 +203,7 @@ func runAddUser(cmd *cobra.Command, args []string) error {
 
 	existingUser, err := storageManager.GetUser(selectedRegion.Name, email)
 	if err != nil {
-		return fmt.Errorf("failed to check existing user: %v", err)
+		return fmt.Errorf("failed to check existing user: %w", err)
 	}
 
 	if existingUser != nil {
@@ -234,11 +234,11 @@ func runAddUser(cmd *cobra.Command, args []string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("authentication failed: %v", err)
+		return fmt.Errorf("authentication failed: %w", err)
 	}
 
 	if err := storageManager.SaveUser(selectedRegion.Name, email, sessionData); err != nil {
-		return fmt.Errorf("failed to save user session: %v", err)
+		return fmt.Errorf("failed to save user session: %w", err)
 	}
 
 	fmt.Printf("\n✓ Successfully added user %s (%s) in region %s\n",
@@ -254,7 +254,7 @@ func runRemoveUser(cmd *cobra.Command, args []string) error {
 
 	existingUser, err := storageManager.GetUser(regionName, email)
 	if err != nil {
-		return fmt.Errorf("failed to check user: %v", err)
+		return fmt.Errorf("failed to check user: %w", err)
 	}
 
 	if existingUser == nil {
@@ -270,7 +270,7 @@ func runRemoveUser(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := storageManager.RemoveUser(regionName, email); err != nil {
-		return fmt.Errorf("failed to remove user: %v", err)
+		return fmt.Errorf("failed to remove user: %w", err)
 	}
 
 	fmt.Printf("✓ Successfully removed user %s from region %s\n", email, regionName)
@@ -303,7 +303,7 @@ func runRefreshUser(cmd *cobra.Command, args []string) error {
 
 	existingUser, err := storageManager.GetUser(regionName, email)
 	if err != nil {
-		return fmt.Errorf("failed to check user: %v", err)
+		return fmt.Errorf("failed to check user: %w", err)
 	}
 
 	if existingUser == nil {
@@ -326,11 +326,11 @@ func runRefreshUser(cmd *cobra.Command, args []string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("authentication failed: %v", err)
+		return fmt.Errorf("authentication failed: %w", err)
 	}
 
 	if err := storageManager.SaveUser(regionName, email, sessionData); err != nil {
-		return fmt.Errorf("failed to save user session: %v", err)
+		return fmt.Errorf("failed to save user session: %w", err)
 	}
 
 	fmt.Printf("✓ Successfully refreshed session for user %s (%s)\n",
@@ -345,7 +345,7 @@ func runTestUser(cmd *cobra.Command, args []string) error {
 
 	user, err := storageManager.GetUser(regionName, email)
 	if err != nil {
-		return fmt.Errorf("failed to get user: %v", err)
+		return fmt.Errorf("failed to get user: %w", err)
 	}
 
 	if user == nil {
@@ -491,7 +491,7 @@ func promptPassword() (string, error) {
 
 	password, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
-		return "", fmt.Errorf("failed to read password: %v", err)
+		return "", fmt.Errorf("failed to read password: %w", err)
 	}
 
 	return string(password), nil
@@ -502,7 +502,7 @@ func performPasswordAuthentication(region tuya.Region, email string) (*tuya.Sess
 
 	password, err := promptPassword()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get password: %v", err)
+		return nil, fmt.Errorf("failed to get password: %w", err)
 	}
 
 	httpClient := createHTTPClientWithSession(nil)
@@ -511,7 +511,7 @@ func performPasswordAuthentication(region tuya.Region, email string) (*tuya.Sess
 
 	loginResult, err := tuya.PasswordLogin(httpClient, serverHost, email, password, region.Continent)
 	if err != nil {
-		return nil, fmt.Errorf("password authentication failed: %v", err)
+		return nil, fmt.Errorf("password authentication failed: %w", err)
 	}
 
 	sessionData := &tuya.SessionData{
@@ -534,7 +534,7 @@ func performQRAuthentication(region tuya.Region, email string) (*tuya.SessionDat
 	fmt.Println("Generating QR code...")
 	qrCodeToken, err := tuya.GenerateQRCode(httpClient, serverHost)
 	if err != nil {
-		return nil, fmt.Errorf("error generating QR code: %v", err)
+		return nil, fmt.Errorf("error generating QR code: %w", err)
 	}
 
 	qrterminal.Generate("tuyaSmart--qrLogin?token="+qrCodeToken, qrterminal.L, os.Stdout)
@@ -546,7 +546,7 @@ func performQRAuthentication(region tuya.Region, email string) (*tuya.SessionDat
 	fmt.Println("Polling for login status...")
 	loginResult, err := tuya.PollForLogin(httpClient, serverHost, qrCodeToken)
 	if err != nil {
-		return nil, fmt.Errorf("error polling for login: %v", err)
+		return nil, fmt.Errorf("error polling for login: %w", err)
 	}
 
 	if loginResult.Email != email {

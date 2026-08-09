@@ -50,7 +50,7 @@ func (m *MQTTManager) connect(deviceId string) (*tuya.MQTTClient, error) {
 
 	userInfo, err := m.mobileClient.GetUserInfo()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user info: %v", err)
+		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
 
 	ecode := m.mobileClient.Ecode

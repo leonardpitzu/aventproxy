@@ -81,6 +81,10 @@ func (lb *LANBridge) Start() error {
 	)
 
 	if err := lb.client.Start(lb.ctx); err != nil {
+		// Start binds a UDP socket before it can fail, so the client owns an fd
+		// even on the error path and the cloud fallback would leak one per try.
+		lb.client.Close()
+		lb.client = nil
 		lb.cancel()
 		return err
 	}

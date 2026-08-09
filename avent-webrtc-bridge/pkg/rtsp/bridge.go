@@ -151,7 +151,7 @@ func (wb *WebRTCBridge) Start() error {
 			// No pre-set MQTT client — create one (fallback for non-managed mode)
 			userInfo, err := wb.mobileClient.GetUserInfo()
 			if err != nil {
-				return fmt.Errorf("failed to get user info: %v", err)
+				return fmt.Errorf("failed to get user info: %w", err)
 			}
 			mobileMqttsUrl = userInfo.Domain.MobileMqttsUrl
 
@@ -171,11 +171,11 @@ func (wb *WebRTCBridge) Start() error {
 				BrokerURL:      fmt.Sprintf("ssl://%s:8883", mobileMqttsUrl),
 			})
 			if err != nil {
-				return fmt.Errorf("failed to connect to MQTT: %v", err)
+				return fmt.Errorf("failed to connect to MQTT: %w", err)
 			}
 
 			if err = wb.mqttClient.Connected.Wait(); err != nil {
-				return fmt.Errorf("MQTT connection failed: %v", err)
+				return fmt.Errorf("MQTT connection failed: %w", err)
 			}
 
 			wb.ownsClient = true
@@ -190,21 +190,21 @@ func (wb *WebRTCBridge) Start() error {
 
 		appInfo, err := tuya.GetAppInfo(httpClient, wb.user.SessionData.ServerHost)
 		if err != nil {
-			return fmt.Errorf("failed to get app info: %v", err)
+			return fmt.Errorf("failed to get app info: %w", err)
 		}
 		clientId := appInfo.Result.ClientId
 
 		var mqttConfig *tuya.MQTTConfigResponse
 		mqttConfig, err = tuya.GetMQTTConfig(httpClient, wb.user.SessionData.ServerHost)
 		if err != nil {
-			return fmt.Errorf("failed to get MQTT config: %v", err)
+			return fmt.Errorf("failed to get MQTT config: %w", err)
 		}
 
 		mobileMqttsUrl = wb.user.SessionData.LoginResult.Domain.MobileMqttsUrl
 
 		webRTCConfig, err = tuya.GetWebRTCConfig(httpClient, wb.user.SessionData.ServerHost, wb.camera.DeviceID)
 		if err != nil {
-			return fmt.Errorf("failed to get WebRTC config: %v", err)
+			return fmt.Errorf("failed to get WebRTC config: %w", err)
 		}
 
 		wb.mqttClient, err = tuya.NewMqttClient(
@@ -213,11 +213,11 @@ func (wb *WebRTCBridge) Start() error {
 			&mqttConfig.Result,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to connect to MQTT: %v", err)
+			return fmt.Errorf("failed to connect to MQTT: %w", err)
 		}
 
 		if err = wb.mqttClient.Connected.Wait(); err != nil {
-			return fmt.Errorf("MQTT connection failed: %v", err)
+			return fmt.Errorf("MQTT connection failed: %w", err)
 		}
 	}
 
@@ -248,7 +248,7 @@ func (wb *WebRTCBridge) Start() error {
 
 	// Setup WebRTC peer connection
 	if err := wb.setupPeerConnection(&webRTCConfig.Result); err != nil {
-		return fmt.Errorf("failed to setup peer connection: %v", err)
+		return fmt.Errorf("failed to setup peer connection: %w", err)
 	}
 
 	// Setup MQTT camera client
@@ -256,11 +256,11 @@ func (wb *WebRTCBridge) Start() error {
 
 	// Create and send offer
 	if err := wb.createAndSendOffer(); err != nil {
-		return fmt.Errorf("failed to create offer: %v", err)
+		return fmt.Errorf("failed to create offer: %w", err)
 	}
 
 	if err = wb.waiter.Wait(); err != nil {
-		return fmt.Errorf("failed to establish connection: %v", err)
+		return fmt.Errorf("failed to establish connection: %w", err)
 	}
 
 	wb.connected = true
@@ -322,12 +322,12 @@ func (wb *WebRTCBridge) setupPeerConnection(webRTCConfig *tuya.WebRTCConfig) err
 	// Convert ICE servers
 	iceServerBytes, err := json.Marshal(webRTCConfig.P2PConfig.Ices)
 	if err != nil {
-		return fmt.Errorf("failed to marshal ICE servers: %v", err)
+		return fmt.Errorf("failed to marshal ICE servers: %w", err)
 	}
 
 	iceServers, err := webrtc.UnmarshalICEServers(iceServerBytes)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal ICE servers: %v", err)
+		return fmt.Errorf("failed to unmarshal ICE servers: %w", err)
 	}
 
 	// Create peer connection configuration
@@ -340,13 +340,13 @@ func (wb *WebRTCBridge) setupPeerConnection(webRTCConfig *tuya.WebRTCConfig) err
 	// Create WebRTC API
 	api, err := webrtc.NewAPI()
 	if err != nil {
-		return fmt.Errorf("failed to create WebRTC API: %v", err)
+		return fmt.Errorf("failed to create WebRTC API: %w", err)
 	}
 
 	// Create peer connection
 	wb.peerConnection, err = api.NewPeerConnection(conf)
 	if err != nil {
-		return fmt.Errorf("failed to create peer connection: %v", err)
+		return fmt.Errorf("failed to create peer connection: %w", err)
 	}
 
 	// On HEVC, use DataChannel to receive video/audio
@@ -562,7 +562,7 @@ func (wb *WebRTCBridge) createAndSendOffer() error {
 	// Create offer
 	offer, err := webrtc.CreateOffer(wb.peerConnection, medias)
 	if err != nil {
-		return fmt.Errorf("failed to create offer: %v", err)
+		return fmt.Errorf("failed to create offer: %w", err)
 	}
 
 	// Remove extmap lines to reduce payload size (device limitation)
@@ -572,7 +572,7 @@ func (wb *WebRTCBridge) createAndSendOffer() error {
 
 	// Send offer
 	if err := wb.cameraClient.SendOffer(offer, wb.resolution, wb.streamType, wb.isHEVC); err != nil {
-		return fmt.Errorf("failed to send offer: %v", err)
+		return fmt.Errorf("failed to send offer: %w", err)
 	}
 
 	return nil

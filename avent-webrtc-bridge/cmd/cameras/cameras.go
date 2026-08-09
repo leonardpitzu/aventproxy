@@ -82,7 +82,7 @@ func runListCameras(cmd *cobra.Command, args []string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to get cameras: %v", err)
+		return fmt.Errorf("failed to get cameras: %w", err)
 	}
 
 	if len(cameras) == 0 {
@@ -119,7 +119,7 @@ func runRefreshCameras(cmd *cobra.Command, args []string) error {
 
 	users, err := storageManager.ListUsers()
 	if err != nil {
-		return fmt.Errorf("failed to list users: %v", err)
+		return fmt.Errorf("failed to list users: %w", err)
 	}
 
 	if len(users) == 0 {
@@ -162,7 +162,7 @@ func runCameraInfo(cmd *cobra.Command, args []string) error {
 
 	cameras, err := storageManager.GetAllCameras()
 	if err != nil {
-		return fmt.Errorf("failed to get cameras: %v", err)
+		return fmt.Errorf("failed to get cameras: %w", err)
 	}
 
 	var targetCamera *storage.CameraInfo
@@ -231,7 +231,7 @@ func discoverCamerasForUser(user *storage.UserSession) ([]storage.CameraInfo, er
 	// Test session validity first
 	_, err := tuya.GetAppInfo(httpClient, user.SessionData.ServerHost)
 	if err != nil {
-		return nil, fmt.Errorf("session is invalid: %v", err)
+		return nil, fmt.Errorf("session is invalid: %w", err)
 	}
 
 	var devices []tuya.Device

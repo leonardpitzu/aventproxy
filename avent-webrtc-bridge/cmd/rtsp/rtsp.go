@@ -89,7 +89,7 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 	// Check if we have any authenticated users
 	users, err := storageManager.ListUsers()
 	if err != nil {
-		return fmt.Errorf("failed to check users: %v", err)
+		return fmt.Errorf("failed to check users: %w", err)
 	}
 
 	if len(users) == 0 {
@@ -102,7 +102,7 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 	// Check if we have any cameras
 	cameras, err := storageManager.GetAllCameras()
 	if err != nil {
-		return fmt.Errorf("failed to check cameras: %v", err)
+		return fmt.Errorf("failed to check cameras: %w", err)
 	}
 
 	if len(cameras) == 0 {
@@ -118,7 +118,7 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 	core.Logger.Info().Msgf("Starting RTSP server on port %d...", port)
 
 	if err := rtspServer.Start(); err != nil {
-		return fmt.Errorf("failed to start RTSP server: %v", err)
+		return fmt.Errorf("failed to start RTSP server: %w", err)
 	}
 
 	if daemon {
@@ -136,7 +136,7 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 
 	core.Logger.Info().Msgf("Shutting down RTSP server...")
 	if err := rtspServer.Stop(); err != nil {
-		return fmt.Errorf("error stopping server: %v", err)
+		return fmt.Errorf("error stopping server: %w", err)
 	}
 
 	core.Logger.Info().Msgf("RTSP server stopped.")
@@ -155,7 +155,7 @@ func runStopServer(cmd *cobra.Command, args []string) error {
 
 	core.Logger.Info().Msg("Stopping RTSP server...")
 	if err := rtspServer.Stop(); err != nil {
-		return fmt.Errorf("failed to stop server: %v", err)
+		return fmt.Errorf("failed to stop server: %w", err)
 	}
 
 	core.Logger.Info().Msg("RTSP server stopped.")
@@ -189,7 +189,7 @@ func runServerStatus(cmd *cobra.Command, args []string) error {
 func runListEndpoints(cmd *cobra.Command, args []string) error {
 	cameras, err := storageManager.GetAllCameras()
 	if err != nil {
-		return fmt.Errorf("failed to get cameras: %v", err)
+		return fmt.Errorf("failed to get cameras: %w", err)
 	}
 
 	if len(cameras) == 0 {

@@ -249,6 +249,10 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 result = await self._async_complete_login(mfa_code)
                 sid = result["sid"]
 
+                # Before spending calls on profile and camera discovery.
+                await self.async_set_unique_id(result["uid"])
+                self._abort_if_unique_id_configured()
+
                 user_info = await self._api.get_user_info()
 
                 # Discover cameras while we have a live session
@@ -267,9 +271,6 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 except Exception:  # noqa: BLE001 - discovery is best effort, the entry is still valid
                     _LOGGER.warning("Camera discovery during setup failed")
-
-                await self.async_set_unique_id(result["uid"])
-                self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
                     title=f"Avent - {user_info.get('nickname', self._email)}",

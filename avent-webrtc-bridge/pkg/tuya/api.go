@@ -27,10 +27,10 @@ type QRCodeResponse struct {
 }
 
 type PollResponse struct {
-	Result  interface{} `json:"result"`
-	T       int64       `json:"t"`
-	Success bool        `json:"success"`
-	Msg     string      `json:"errorMsg,omitempty"`
+	Result  any    `json:"result"`
+	T       int64  `json:"t"`
+	Success bool   `json:"success"`
+	Msg     string `json:"errorMsg,omitempty"`
 }
 
 type LoginTokenRequest struct {
@@ -307,7 +307,7 @@ func PasswordLogin(client *http.Client, serverHost, email, password, countryCode
 	// Step 2: Encrypt password with RSA
 	encryptedPassword, err := encryptPassword(password, tokenResp.Result.PbKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt password: %v", err)
+		return nil, fmt.Errorf("failed to encrypt password: %w", err)
 	}
 
 	// Step 3: Perform login
@@ -474,7 +474,7 @@ func PollForLogin(client *http.Client, serverHost string, token string) (*LoginR
 		}
 
 		if pollResponse.Success {
-			if resultMap, ok := pollResponse.Result.(map[string]interface{}); ok {
+			if resultMap, ok := pollResponse.Result.(map[string]any); ok {
 				if _, ok := resultMap["uid"]; ok {
 					resultJSON, err := json.Marshal(pollResponse.Result)
 					if err != nil {

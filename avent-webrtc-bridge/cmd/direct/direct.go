@@ -94,13 +94,13 @@ func runDirect(cmd *cobra.Command, args []string) error {
 	core.Logger.Info().Msg("Verifying API access...")
 	_, err := client.Call("smartlife.p.time.get", "1.0", nil)
 	if err != nil {
-		return fmt.Errorf("API verification failed: %v", err)
+		return fmt.Errorf("API verification failed: %w", err)
 	}
 	core.Logger.Info().Msg("API access OK")
 
 	userInfo, err := client.GetUserInfo()
 	if err != nil {
-		return fmt.Errorf("failed to get user info: %v", err)
+		return fmt.Errorf("failed to get user info: %w", err)
 	}
 	core.Logger.Info().Msgf("User: %s (%s)", userInfo.Nickname, utils.MaskEmail(userInfo.Email))
 	core.Logger.Info().Msgf("MQTT domain: %s", userInfo.Domain.MobileMqttsUrl)
@@ -145,7 +145,7 @@ func runDirect(cmd *cobra.Command, args []string) error {
 	server.Talkback = talkback
 
 	if err := server.Start(); err != nil {
-		return fmt.Errorf("failed to start RTSP server: %v", err)
+		return fmt.Errorf("failed to start RTSP server: %w", err)
 	}
 
 	core.Logger.Info().Msgf("RTSP endpoints:")
