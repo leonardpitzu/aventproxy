@@ -3,6 +3,7 @@ package rtsp
 import (
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"avent-webrtc-bridge/pkg/core"
@@ -35,6 +36,7 @@ type framingProbe struct {
 	lastTS     uint64
 	opening    [32]int
 	following  [32]int
+	fuHeaders  map[byte]int
 	heads      []string
 	reported   bool
 }
@@ -63,6 +65,15 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 		}
 	}
 
+	// The FU header says which NAL a fragment belongs to and whether it opens or
+	// closes it. Without an end bit nothing marks the last packet of a picture.
+	if frame.NAL[0]&0x1f == 28 && len(frame.NAL) > 1 {
+		if p.fuHeaders == nil {
+			p.fuHeaders = map[byte]int{}
+		}
+		p.fuHeaders[frame.NAL[1]]++
+	}
+
 	if len(p.heads) < framingSamples {
 		p.heads = append(p.heads, fmt.Sprintf("%s(%d)", hex.EncodeToString(frame.NAL[:min(len(frame.NAL), 6)]), len(frame.NAL)))
 	}
@@ -88,10 +99,44 @@ func (p *framingProbe) summary() string {
 	return fmt.Sprintf(
 		"%d messages, %d declare more than they carry, %d access units by picture "+
 			"(%d by the monitor's clock), %d slice starts of which %d at macroblock zero; "+
-			"opening a unit: %s; continuing one: %s; first units: %s",
+			"opening a unit: %s; continuing one: %s; FU headers: %s; first units: %s",
 		p.seen, p.continued, p.byPicture, p.byClock, p.sliceStart, p.firstMB,
-		histogram(p.opening), histogram(p.following), strings.Join(p.heads, " "),
+		histogram(p.opening), histogram(p.following), fuHeaders(p.fuHeaders),
+		strings.Join(p.heads, " "),
 	)
+}
+
+// fuHeaders renders the FU header counts, decoding the bits that matter so the
+// line can be read without a calculator.
+func fuHeaders(counts map[byte]int) string {
+	if len(counts) == 0 {
+		return "none"
+	}
+	headers := make([]byte, 0, len(counts))
+	for h := range counts {
+		headers = append(headers, h)
+	}
+	slices.SortFunc(headers, func(a, b byte) int { return counts[b] - counts[a] })
+
+	var parts []string
+	for i, h := range headers {
+		if i == 6 {
+			parts = append(parts, "...")
+			break
+		}
+		flags := ""
+		if h&0x80 != 0 {
+			flags += "S"
+		}
+		if h&0x40 != 0 {
+			flags += "E"
+		}
+		if flags == "" {
+			flags = "-"
+		}
+		parts = append(parts, fmt.Sprintf("%02x[%s,nal%d]=%d", h, flags, h&0x1f, counts[h]))
+	}
+	return strings.Join(parts, " ")
 }
 
 // histogram renders the NAL-type counts, naming the types that would be valid
