@@ -24,7 +24,11 @@ const (
 
 	macLen         = sha1.Size // trailing HMAC on every datagram
 	mediaHeaderLen = 32        // command + stream description
-	subHeaderLen   = 16        // length + timestamp + flags
+	// The sub-header comes in two forms. The long one carries a length; the
+	// short one does not and starts eight bytes later. Both end with the same
+	// four flag bytes immediately before the payload.
+	subHeaderLen      = 16
+	shortSubHeaderLen = 8
 	// subHeaderOverhead is what the length field counts besides the payload:
 	// the 8-byte timestamp and the 4-byte flags.
 	subHeaderOverhead = 12
@@ -114,11 +118,8 @@ type VideoFrame struct {
 	Height    int
 	FPS       int
 	Timestamp uint64
-	// Declared is the data length the sub-header claims. Larger than len(NAL)
-	// means the unit continues into the messages that follow.
-	Declared int
-	// NAL is an RTP payload, not a bare NAL: parameter sets arrive whole and
-	// slices arrive already fragmented as FU-A.
+	// NAL is an RTP payload, whole as the monitor sent it: parameter sets
+	// arrive complete and slices arrive already fragmented as FU-A.
 	NAL []byte
 }
 
@@ -147,80 +148,44 @@ func sampleRate(index uint16) int {
 }
 
 // mediaPayload splits a decrypted media message into its command, timestamp
-// and data. Both streams share this framing; only the description bytes at
-// descOffset differ.
-func mediaPayload(msg []byte) (cmd uint32, ts uint64, declared int, payload []byte, ok bool) {
-	if len(msg) < mediaHeaderLen+subHeaderLen {
-		return 0, 0, 0, nil, false
+// and data.
+//
+// Two sub-header forms are in use and the length field is what tells them
+// apart: in the long form it accounts for exactly what follows, and in the
+// short form those bytes are payload and read as nonsense. Reading only the
+// long form leaves every short-form message looking like a gigabyte unit,
+// which is most of the picture data on this hardware.
+func mediaPayload(msg []byte) (cmd uint32, ts uint64, long bool, payload []byte, ok bool) {
+	if len(msg) < mediaHeaderLen+shortSubHeaderLen {
+		return 0, 0, false, nil, false
 	}
+	cmd = binary.LittleEndian.Uint32(msg[:4])
 	sub := msg[mediaHeaderLen:]
-	length := int(binary.LittleEndian.Uint32(sub[:4]))
-	if length < subHeaderOverhead {
-		return 0, 0, 0, nil, false
+
+	if len(sub) >= subHeaderLen {
+		length := int(binary.LittleEndian.Uint32(sub[:4]))
+		if length >= subHeaderOverhead && length-subHeaderOverhead == len(sub)-subHeaderLen {
+			return cmd, binary.LittleEndian.Uint64(sub[4:12]), true, sub[subHeaderLen:], true
+		}
 	}
-	payload = sub[subHeaderLen:]
-	declared = length - subHeaderOverhead
-	if declared >= 0 && declared <= len(payload) {
-		payload = payload[:declared]
-	}
+
+	// Short form: a 4-byte clock and the flags, then the payload.
+	payload = sub[shortSubHeaderLen:]
 	if len(payload) == 0 {
-		return 0, 0, 0, nil, false
+		return 0, 0, false, nil, false
 	}
-	return binary.LittleEndian.Uint32(msg[:4]), binary.LittleEndian.Uint64(sub[4:12]), declared, payload, true
+	return cmd, uint64(binary.LittleEndian.Uint32(sub[:4])), false, payload, true
 }
 
 // parseVideo turns a decrypted video message into a frame.
-func parseVideo(msg []byte, ts uint64, declared int, payload []byte) *VideoFrame {
+func parseVideo(msg []byte, ts uint64, payload []byte) *VideoFrame {
 	return &VideoFrame{
 		Width:     int(binary.LittleEndian.Uint16(msg[26:28])),
 		Height:    int(binary.LittleEndian.Uint16(msg[28:30])),
 		FPS:       int(msg[30]),
 		Timestamp: ts,
-		Declared:  declared,
 		NAL:       payload,
 	}
-}
-
-// maxUnitSize caps what one unit may claim, so a corrupt length cannot make the
-// assembler buffer without end. A 720p keyframe is tens of kilobytes.
-const maxUnitSize = 1 << 20
-
-// videoAssembler joins the messages that make up one payload.
-//
-// A message is not a payload on its own: the first one declares the whole
-// length and carries what fits, and the rest continue it. Forwarding the pieces
-// separately produces FU-A fragments that are cut in half, which a decoder
-// reports as impossible NAL types.
-type videoAssembler struct {
-	header   []byte
-	ts       uint64
-	declared int
-	buf      []byte
-}
-
-// add folds one message in, returning a frame once the unit is whole.
-func (a *videoAssembler) add(msg []byte, ts uint64, declared int, payload []byte) *VideoFrame {
-	if a.declared == 0 {
-		if declared <= len(payload) {
-			return parseVideo(msg, ts, declared, payload)
-		}
-		if declared > maxUnitSize {
-			return nil
-		}
-		a.header = append(a.header[:0], msg[:mediaHeaderLen]...)
-		a.ts, a.declared = ts, declared
-		a.buf = append(a.buf[:0], payload...)
-		return nil
-	}
-
-	a.buf = append(a.buf, payload...)
-	if len(a.buf) < a.declared {
-		return nil
-	}
-
-	frame := parseVideo(a.header, a.ts, a.declared, a.buf[:a.declared])
-	a.declared = 0
-	return frame
 }
 
 // parseAudio turns a decrypted audio message into a frame. The description

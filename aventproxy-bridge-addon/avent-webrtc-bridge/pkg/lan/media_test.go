@@ -3,136 +3,118 @@ package lan
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"testing"
 )
 
-// message builds a video media message declaring `declared` bytes of unit while
-// carrying `payload`, which is how the monitor announces a split payload.
-func message(ts uint64, declared int, payload []byte) []byte {
-	msg := make([]byte, mediaHeaderLen+subHeaderLen+len(payload))
+// message builds a media message from a sub-header and a payload. The 32-byte
+// header carries the command and the stream description.
+func message(subHeader, payload []byte) []byte {
+	msg := make([]byte, mediaHeaderLen)
 	binary.LittleEndian.PutUint32(msg[:4], CmdMediaVideo)
 	binary.LittleEndian.PutUint16(msg[26:28], 1280)
 	binary.LittleEndian.PutUint16(msg[28:30], 720)
 	msg[30] = 20
-	sub := msg[mediaHeaderLen:]
-	binary.LittleEndian.PutUint32(sub[:4], uint32(declared+subHeaderOverhead))
+	return append(append(msg, subHeader...), payload...)
+}
+
+// longSubHeader is the form that states a length: length, timestamp, flags.
+func longSubHeader(payloadLen int, ts uint64) []byte {
+	sub := make([]byte, subHeaderLen)
+	binary.LittleEndian.PutUint32(sub[:4], uint32(payloadLen+subHeaderOverhead))
 	binary.LittleEndian.PutUint64(sub[4:12], ts)
-	copy(sub[subHeaderLen:], payload)
-	return msg
+	copy(sub[12:16], []byte{0x00, 0x00, 0x00, 0x0a})
+	return sub
 }
 
-func add(t *testing.T, a *videoAssembler, msg []byte) *VideoFrame {
-	t.Helper()
-	cmd, ts, declared, payload, ok := mediaPayload(msg)
+// shortSubHeader is the form without a length: a 4-byte clock, then the flags.
+func shortSubHeader(ts uint32) []byte {
+	sub := make([]byte, shortSubHeaderLen)
+	binary.LittleEndian.PutUint32(sub[:4], ts)
+	copy(sub[4:8], []byte{0x00, 0x00, 0x00, 0x0a})
+	return sub
+}
+
+func TestLongFormIsRecognisedByItsLength(t *testing.T) {
+	payload := bytes.Repeat([]byte{0xab}, 1102)
+	payload[0], payload[1] = 0x3c, 0x85
+
+	cmd, ts, long, got, ok := mediaPayload(message(longSubHeader(len(payload), 9999), payload))
 	if !ok || cmd != CmdMediaVideo {
-		t.Fatalf("message did not parse as video")
+		t.Fatalf("did not parse as video: ok=%v cmd=%#x", ok, cmd)
 	}
-	return a.add(msg, ts, declared, payload)
-}
-
-func TestAssemblerPassesWholePayloadsStraightThrough(t *testing.T) {
-	var a videoAssembler
-	payload := []byte{0x7c, 0x85, 0x01, 0x02, 0x03}
-
-	frame := add(t, &a, message(1000, len(payload), payload))
-	if frame == nil {
-		t.Fatal("a payload that fits in one message should come out at once")
+	if !long {
+		t.Fatal("a sub-header whose length accounts for the payload is the long form")
 	}
-	if !bytes.Equal(frame.NAL, payload) {
-		t.Fatalf("payload = % x, want % x", frame.NAL, payload)
+	if ts != 9999 {
+		t.Fatalf("timestamp = %d, want 9999", ts)
 	}
-	if frame.Width != 1280 || frame.Height != 720 || frame.FPS != 20 {
-		t.Fatalf("description lost: %dx%d at %d", frame.Width, frame.Height, frame.FPS)
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("payload = %d bytes, want %d", len(got), len(payload))
 	}
 }
 
-func TestAssemblerJoinsASplitPayload(t *testing.T) {
-	var a videoAssembler
-	head := []byte{0x7c, 0x85, 0xaa, 0xbb}
-	tail := []byte{0xcc, 0xdd, 0xee}
-	whole := append(append([]byte{}, head...), tail...)
+// The short form has no length, so its first four bytes are a clock that reads
+// as an impossible length. Taking it at face value is what dropped four fifths
+// of the video.
+func TestShortFormIsNotMistakenForALength(t *testing.T) {
+	payload := bytes.Repeat([]byte{0xcd}, 1102)
+	payload[0], payload[1] = 0x3c, 0x01
 
-	if frame := add(t, &a, message(1000, len(whole), head)); frame != nil {
-		t.Fatal("a payload declaring more than it carries is not finished yet")
+	_, _, long, got, ok := mediaPayload(message(shortSubHeader(0x985c1025), payload))
+	if !ok {
+		t.Fatal("a short-form message must still parse")
 	}
-	frame := add(t, &a, message(1001, len(tail), tail))
-	if frame == nil {
-		t.Fatal("the continuation should complete the unit")
+	if long {
+		t.Fatal("read as the long form; its length field is payload data")
 	}
-	if !bytes.Equal(frame.NAL, whole) {
-		t.Fatalf("assembled % x, want % x", frame.NAL, whole)
-	}
-	// The unit belongs to when it started, not when it finished.
-	if frame.Timestamp != 1000 {
-		t.Fatalf("timestamp = %d, want the opening message's 1000", frame.Timestamp)
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("payload = % x..., want it to start 3c 01 and run %d bytes", got[:2], len(payload))
 	}
 }
 
-func TestAssemblerJoinsAcrossSeveralMessages(t *testing.T) {
-	var a videoAssembler
-	parts := [][]byte{{0x7c, 0x85}, {0x01, 0x02}, {0x03, 0x04}, {0x05}}
-	total := 7
+// Bytes taken off the wire, from the sub-header to the start of the payload.
+func TestCapturedSubHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		sub    string
+		long   bool
+		leader string
+	}{
+		{"keyframe fragment", "5a0400008060fe46250738c00000000a", true, "3c05"},
+		{"predicted fragment", "25105c980000000a", false, "3c01"},
+		{"predicted slice start", "25367e500000000a", false, "3c81"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sub, err := hex.DecodeString(tc.sub)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leader, err := hex.DecodeString(tc.leader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := append(leader, bytes.Repeat([]byte{0x5a}, 1102-len(leader))...)
 
-	var got *VideoFrame
-	for i, part := range parts {
-		declared := len(part)
-		if i == 0 {
-			declared = total
-		}
-		if frame := add(t, &a, message(uint64(1000+i), declared, part)); frame != nil {
-			got = frame
-		}
-	}
-	if got == nil {
-		t.Fatal("the unit never completed")
-	}
-	if want := []byte{0x7c, 0x85, 0x01, 0x02, 0x03, 0x04, 0x05}; !bytes.Equal(got.NAL, want) {
-		t.Fatalf("assembled % x, want % x", got.NAL, want)
+			_, _, long, got, ok := mediaPayload(message(sub, payload))
+			if !ok {
+				t.Fatal("did not parse")
+			}
+			if long != tc.long {
+				t.Fatalf("long form = %v, want %v", long, tc.long)
+			}
+			if len(got) != 1102 {
+				t.Fatalf("payload = %d bytes, want 1102", len(got))
+			}
+			if !bytes.HasPrefix(got, leader) {
+				t.Fatalf("payload starts % x, want % x", got[:2], leader)
+			}
+		})
 	}
 }
 
-// A unit that is finished mid-message must not swallow what follows it.
-func TestAssemblerStopsAtTheDeclaredLength(t *testing.T) {
-	var a videoAssembler
-
-	if frame := add(t, &a, message(1000, 6, []byte{0x7c, 0x85, 0xaa})); frame != nil {
-		t.Fatal("not finished yet")
-	}
-	frame := add(t, &a, message(1001, 4, []byte{0xbb, 0xcc, 0xdd, 0xee}))
-	if frame == nil {
-		t.Fatal("the unit should have completed")
-	}
-	if len(frame.NAL) != 6 {
-		t.Fatalf("assembled %d bytes, want the declared 6", len(frame.NAL))
-	}
-}
-
-// A corrupt length must not make the assembler buffer without end.
-func TestAssemblerRefusesAnImpossibleLength(t *testing.T) {
-	var a videoAssembler
-	if frame := add(t, &a, message(1000, maxUnitSize+1, []byte{0x7c, 0x85})); frame != nil {
-		t.Fatal("an impossible length should be dropped, not assembled")
-	}
-	if a.declared != 0 {
-		t.Fatal("the assembler should stay idle after refusing a unit")
-	}
-}
-
-// The assembler is reusable: a completed unit must not leak into the next.
-func TestAssemblerResetsBetweenUnits(t *testing.T) {
-	var a videoAssembler
-
-	add(t, &a, message(1000, 4, []byte{0x7c, 0x85}))
-	first := add(t, &a, message(1001, 2, []byte{0x01, 0x02}))
-	if first == nil || len(first.NAL) != 4 {
-		t.Fatalf("first unit = %v", first)
-	}
-
-	second := add(t, &a, message(2000, 3, []byte{0x67, 0x42, 0x00}))
-	if second == nil {
-		t.Fatal("the next whole payload should come straight out")
-	}
-	if want := []byte{0x67, 0x42, 0x00}; !bytes.Equal(second.NAL, want) {
-		t.Fatalf("second unit = % x, want % x", second.NAL, want)
+func TestTooShortToParse(t *testing.T) {
+	if _, _, _, _, ok := mediaPayload(make([]byte, mediaHeaderLen+4)); ok {
+		t.Fatal("a message with no room for a sub-header must not parse")
 	}
 }

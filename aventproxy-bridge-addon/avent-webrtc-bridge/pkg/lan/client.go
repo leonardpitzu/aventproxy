@@ -58,9 +58,12 @@ type Stats struct {
 	Malformed  int
 	Video      int
 	Audio      int
-	// Frames counts what the assembler emitted. Equal to Video means it never
-	// joined anything and is not needed.
+	// Frames counts what reached the caller.
 	Frames int
+	// LongForm and ShortForm count the two sub-header layouts. Short-form
+	// messages were read as gigabyte-long units and dropped until 2.3.8.
+	LongForm  int
+	ShortForm int
 	// Raw samples each video message before assembly, as declared/carried and
 	// the first payload bytes. Assembly is driven by the declared length, so
 	// this is where a wrong reading of it shows.
@@ -294,9 +297,6 @@ func (c *Client) login(aesKey []byte) error {
 
 func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []byte) {
 	buf := make([]byte, 65535)
-	// One assembler per conversation: a split payload is continued by the next
-	// message on the same stream.
-	var video videoAssembler
 	for {
 		if ctx.Err() != nil {
 			return
@@ -317,19 +317,23 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		if c.OnRawMedia != nil {
 			c.OnRawMedia(msg)
 		}
-		cmd, ts, declared, payload, ok := mediaPayload(msg)
+		cmd, ts, long, payload, ok := mediaPayload(msg)
 		if !ok {
 			c.count(&c.stats.Malformed)
 			continue
 		}
+		if long {
+			c.count(&c.stats.LongForm)
+		} else {
+			c.count(&c.stats.ShortForm)
+		}
 		switch cmd {
 		case CmdMediaVideo:
 			c.count(&c.stats.Video)
-			c.sample(msg, declared, payload)
-			frame := video.add(msg, ts, declared, payload)
-			if frame != nil && c.onFrame != nil {
+			c.sample(msg, len(payload), payload)
+			if c.onFrame != nil {
 				c.count(&c.stats.Frames)
-				c.onFrame(frame)
+				c.onFrame(parseVideo(msg, ts, payload))
 			}
 		case CmdMediaAudio:
 			c.count(&c.stats.Audio)

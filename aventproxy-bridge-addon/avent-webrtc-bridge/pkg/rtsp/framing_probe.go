@@ -27,7 +27,6 @@ const framingSamples = 8
 
 type framingProbe struct {
 	seen       int
-	continued  int
 	byClock    int
 	byPicture  int
 	sliceStart int // fragments that begin a coded slice
@@ -84,9 +83,6 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string, client *lan
 	} else {
 		p.following[nalType]++
 	}
-	if frame.Declared > len(frame.NAL) {
-		p.continued++
-	}
 
 	p.seen++
 	if p.seen >= framingSample {
@@ -113,18 +109,18 @@ func readLoopCounts(s lan.Stats) string {
 	}
 	return fmt.Sprintf(
 		"%d messages read, %d undecryptable, %d malformed, %d video in %d frames, %d audio; "+
-			"discarded commands: %s; raw video: %s",
-		s.Reads, s.OpenErrors, s.Malformed, s.Video, s.Frames, s.Audio, discarded,
-		strings.Join(s.Raw, " "),
+			"sub-headers %d long / %d short; discarded commands: %s; raw video: %s",
+		s.Reads, s.OpenErrors, s.Malformed, s.Video, s.Frames, s.Audio,
+		s.LongForm, s.ShortForm, discarded, strings.Join(s.Raw, " "),
 	)
 }
 
 func (p *framingProbe) summary() string {
 	return fmt.Sprintf(
-		"%d messages, %d declare more than they carry, %d access units by picture "+
-			"(%d by the monitor's clock), %d slice starts of which %d at macroblock zero; "+
+		"%d units, %d access units by picture (%d by the monitor's clock), "+
+			"%d slice starts of which %d at macroblock zero; "+
 			"opening a unit: %s; continuing one: %s; FU headers: %s; first units: %s",
-		p.seen, p.continued, p.byPicture, p.byClock, p.sliceStart, p.firstMB,
+		p.seen, p.byPicture, p.byClock, p.sliceStart, p.firstMB,
 		histogram(p.opening), histogram(p.following), fuHeaders(p.fuHeaders),
 		strings.Join(p.heads, " "),
 	)
