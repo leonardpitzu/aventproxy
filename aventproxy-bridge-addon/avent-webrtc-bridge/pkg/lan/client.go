@@ -58,9 +58,26 @@ type Stats struct {
 	Malformed  int
 	Video      int
 	Audio      int
+	// Raw samples each video message before assembly, as declared/carried and
+	// the first payload bytes. Assembly is driven by the declared length, so
+	// this is where a wrong reading of it shows.
+	Raw []string
 	// Other counts commands the dispatcher has no case for. Anything here is
 	// media this bridge is discarding.
 	Other map[uint32]int
+}
+
+// rawSamples is how many messages are recorded verbatim.
+const rawSamples = 12
+
+func (c *Client) sample(declared int, ts uint64, payload []byte) {
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+	if len(c.stats.Raw) >= rawSamples {
+		return
+	}
+	c.stats.Raw = append(c.stats.Raw, fmt.Sprintf("d%d/c%d@%d:%s",
+		declared, len(payload), ts%100000, hex.EncodeToString(payload[:min(len(payload), 4)])))
 }
 
 func (c *Client) count(field *int) {
@@ -297,6 +314,7 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		switch cmd {
 		case CmdMediaVideo:
 			c.count(&c.stats.Video)
+			c.sample(declared, ts, payload)
 			frame := video.add(msg, ts, declared, payload)
 			if frame != nil && c.onFrame != nil {
 				c.onFrame(frame)
