@@ -42,7 +42,7 @@ step fails, so a camera it cannot reach locally still works exactly as before.
 | Signalling | protocol-302 offer/answer on the same session |
 | Connectivity | ICE host candidates, checked directly rather than through a full ICE agent |
 | Media | KCP over UDP, AES-128-CBC payloads, each datagram carrying an HMAC-SHA1 trailer |
-| Video | H.264 RTP payloads, rejoined where one was split across messages |
+| Video | H.264 RTP payloads, one whole payload per message |
 | Audio | 16 kHz linear PCM, carried as RTP L16 |
 
 Once it is up, nothing in that chain touches the internet. The three credentials

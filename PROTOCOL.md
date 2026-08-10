@@ -1074,7 +1074,8 @@ message is:
 ```
 header      32 B   command(4) ... stream description at offset 24
 sub-header  16 B   length(4) timestamp(8) flags(4)      length = 12 + data
-data                                                     from offset 16 of the sub-header
+        or   8 B   timestamp(4) flags(4)
+data                                                     the rest of the message
 ```
 
 Both streams share this framing, so only the command and the description
@@ -1085,23 +1086,27 @@ differ:
 | `0x00010003` | Video | codec, width, height, fps | H.264 as RTP payloads: parameter sets whole, slices already FU-A fragmented |
 | `0x00010005` | Audio | codec, rate index, channels | signed 16-bit **little-endian linear PCM**, 640 bytes per unit |
 
-**A payload is not a message.** The sub-header's length field declares the whole
-unit, and the message carrying it may hold only part. Measured on an SCD953:
-of 300 consecutive video messages, **122 declared more than they carried**, each
-finished by the message after it. The leading byte tells the same story from the
-other side: messages that open a unit are ordinary payloads (177 FU-A, plus SPS,
-PPS, IDR, SEI and STAP-A), while the continuations start mid-data and land on
-NAL types that cannot exist — 95 of them in that sample.
+**The sub-header comes in two lengths and only one of them states a length.**
+The long form is sixteen bytes and its length field accounts for everything
+after it; the short form is eight bytes of timestamp and flags, and the payload
+starts immediately. Tell them apart by asking the length field to prove itself:
+if `length - 12` equals the bytes remaining, the sub-header is the long form,
+and otherwise it is the short one and those four bytes were never a length. The
+`00 00 00 0a` flag word sits directly before the payload in both, which is the
+easiest landmark when reading a capture by eye.
 
-Forwarding those halves as packets of their own gives a decoder truncated FU-A
-fragments, which it reports as impossible NAL types and "nal size exceeds
-length". Rejoining them by the declared length is what makes the stream decode;
-after it, the same measurement reads `0 declare more than they carry` and every
-leading byte is a valid payload type.
+Getting this wrong is expensive and quiet. Reading a short-form message as the
+long form yields a declared length in the billions, and any sanity check on that
+number will drop the message; on an SCD953 that discarded roughly four fifths of
+the video, and it discarded a specific four fifths. Long-form messages carry the
+keyframes; the short form carries the FU-A fragments of NAL type 1, so what
+survives is IDR and nothing else — a stream that decodes into a handful of
+enormous access units, arrives late or not at all, and produces framing
+symptoms in every direction that have nothing to do with the framing.
 
-One more thing the same measurement settles: **300 messages carried 300 distinct
-timestamps**. The monitor's clock counts sends, not pictures, so packets
-belonging to one access unit do not share a value and cannot be grouped by it.
+**A payload is a message.** Once both forms are read correctly, every message
+carries a whole unit; nothing is split and nothing needs rejoining. The
+appearance of split payloads was the misread length, not the wire.
 
 The login sequence has always asked for both: the sixth startup control message
 is `78563412 05000100 ...`, command `0x00010005`. An implementation that decodes
