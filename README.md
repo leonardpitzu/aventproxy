@@ -101,6 +101,31 @@ silently:
   discards the responses, which is why the connectivity checks are done in
   `pkg/lan` instead of with pion's ICE agent.
 
+### Cloud and local parity
+
+The cloud path is the complete one; the local path is the preferred one, and
+the gap between them is where the remaining work is. Verified means measured on
+a live monitor, not inferred.
+
+| Capability | Cloud | Local | What closing the gap needs |
+|---|---|---|---|
+| Video, H.264 | yes | **yes**, verified | — |
+| Audio, monitor to viewer | yes, G.711 8 kHz expanded to L16 | **yes**, verified, L16 16 kHz | — the local path is the better of the two |
+| Serving with no internet | no, by definition | **yes** | — |
+| Talkback, viewer to monitor | yes | **no** | Which control message carries outbound audio. The six startup control messages are replayed verbatim and only partly decoded; needs a capture of the app talking to a monitor over the LAN |
+| Resolution / quality selection | yes, from the camera's `skill` | **no** | `NewLANBridge` takes no resolution and the startup control messages are replayed as captured, so the monitor sends whatever they asked for |
+| H.265 / HEVC monitors | yes, detected from `skill` | **unknown** | `pkg/lan` has no H.265 handling and the description falls back to H.264 when no `skill` is stored. No HEVC monitor has been tested on either path |
+| Capability discovery | yes, live from `smartlife.m.rtc.config.get` | partial, from the stored `skill` or defaults | The add-on config carries no `skill`, so local streams are described from defaults. Right for this monitor, unverified for others |
+
+Two things sit outside the add-on and are the integration's, listed here only
+so the picture is whole: device state and alerts still come from a cloud poll
+with local push on top, and controls are written locally first with a cloud
+mirror behind them.
+
+One gap belongs to neither and is parked: a monitor that has not reached Tuya
+since it booted ignores local signalling entirely, and nothing on the LAN can
+stand in for that. See the paragraphs above.
+
 
 ## Supported devices
 
