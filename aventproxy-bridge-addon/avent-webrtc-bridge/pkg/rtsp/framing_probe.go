@@ -112,9 +112,9 @@ func readLoopCounts(s lan.Stats) string {
 		discarded = strings.Join(other, " ")
 	}
 	return fmt.Sprintf(
-		"%d messages read, %d undecryptable, %d malformed, %d video, %d audio; "+
+		"%d messages read, %d undecryptable, %d malformed, %d video in %d frames, %d audio; "+
 			"discarded commands: %s; raw video: %s",
-		s.Reads, s.OpenErrors, s.Malformed, s.Video, s.Audio, discarded,
+		s.Reads, s.OpenErrors, s.Malformed, s.Video, s.Frames, s.Audio, discarded,
 		strings.Join(s.Raw, " "),
 	)
 }

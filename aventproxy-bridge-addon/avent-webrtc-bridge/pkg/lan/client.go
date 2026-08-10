@@ -58,6 +58,9 @@ type Stats struct {
 	Malformed  int
 	Video      int
 	Audio      int
+	// Frames counts what the assembler emitted. Equal to Video means it never
+	// joined anything and is not needed.
+	Frames int
 	// Raw samples each video message before assembly, as declared/carried and
 	// the first payload bytes. Assembly is driven by the declared length, so
 	// this is where a wrong reading of it shows.
@@ -67,17 +70,22 @@ type Stats struct {
 	Other map[uint32]int
 }
 
-// rawSamples is how many messages are recorded verbatim.
-const rawSamples = 12
+// rawSamples is how many messages are recorded verbatim, and rawEvery spaces
+// them out: the opening burst is parameter sets and a keyframe, which is the
+// least representative part of the stream.
+const (
+	rawSamples = 12
+	rawEvery   = 100
+)
 
 func (c *Client) sample(declared int, ts uint64, payload []byte) {
 	c.statsMu.Lock()
 	defer c.statsMu.Unlock()
-	if len(c.stats.Raw) >= rawSamples {
+	if len(c.stats.Raw) >= rawSamples || c.stats.Video%rawEvery != 1 {
 		return
 	}
-	c.stats.Raw = append(c.stats.Raw, fmt.Sprintf("d%d/c%d@%d:%s",
-		declared, len(payload), ts%100000, hex.EncodeToString(payload[:min(len(payload), 4)])))
+	c.stats.Raw = append(c.stats.Raw, fmt.Sprintf("#%d d%d/c%d t%d:%s",
+		c.stats.Video, declared, len(payload), ts, hex.EncodeToString(payload[:min(len(payload), 4)])))
 }
 
 func (c *Client) count(field *int) {
@@ -317,6 +325,7 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 			c.sample(declared, ts, payload)
 			frame := video.add(msg, ts, declared, payload)
 			if frame != nil && c.onFrame != nil {
+				c.count(&c.stats.Frames)
 				c.onFrame(frame)
 			}
 		case CmdMediaAudio:
