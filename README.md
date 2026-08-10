@@ -433,7 +433,7 @@ is shared.
 | Connectivity | ICE, host candidates only. The monitor is always controlling and its binding success responses carry no MESSAGE-INTEGRITY |
 | Media | KCP over the same socket, two conversations: control, and one for the media whose id varies per session. Payloads are AES-128-CBC, each datagram carrying an HMAC-SHA1 trailer keyed by the SDP `aes-key` |
 | Login | `md5(password + "||" + localKey)`, in a 104-byte frame naming the user `admin` |
-| Video | H.264 arriving as RTP payloads: parameter sets whole, slices already fragmented as FU-A. A payload is not a message, though: the sub-header declares its length and about 40% of them are finished by the message that follows, so they are rejoined before forwarding |
+| Video | H.264 arriving as RTP payloads: parameter sets whole, slices already fragmented as FU-A. One whole payload per message, once the sub-header is read correctly — it comes in two forms and only one of them states a length |
 | Audio | Command `0x00010005`: signed 16-bit little-endian PCM, 16 kHz mono, 640 bytes (20 ms) per unit. Forwarded as RTP L16, which is the same samples in network byte order |
 
 ### Cloud
@@ -466,6 +466,41 @@ step cost half the bandwidth and bought nothing.
 
 The backchannel is described separately and stays on G.711, because that is
 what the camera accepts.
+
+### What a browser needs that ffmpeg does not
+
+The monitor's media is repackaged rather than re-encoded, so the bridge is
+responsible for everything RTP says about it. Four things had to be right
+before a browser would play the stream, and none of them showed up in ffmpeg:
+it ignores RTP timestamps and rebuilds timing from marker bits, tolerates a
+handshake talked over, and pays no attention to what the stream claims about
+itself. For a long while `ffprobe` reported a flawless 20 fps with audio at the
+correct level while browsers got nothing at all.
+
+**One timestamp per picture.** A picture leaves as a burst of a dozen or more
+fragments. Stamping each as it goes dates one picture across several instants,
+and a decoder reads that literally: as many pictures as there were fragments,
+none of them complete. The clock is held until the marker bit ends the unit,
+and the parameter sets replayed ahead of a keyframe belong to that unit too.
+
+**An audio clock that counts samples.** A timestamp says when audio was
+sampled, not when it was forwarded. Each unit carries 320 samples, so the clock
+advances by exactly that, catching up to wall time only after a silence long
+enough to mean the monitor stopped sending.
+
+**No media before PLAY.** A client sets its tracks up one at a time over the
+same connection that interleaved media will share. Registering it with the
+forwarder at SETUP put video packets where the next SETUP response belonged;
+clients that tolerate it keep video and lose audio, which is precisely what
+Home Assistant did.
+
+**A level the picture actually needs.** The monitor's parameter sets declare
+level 5.1 — the 4K ceiling — for 1280x720 at 20 fps, which is 3600 macroblocks
+and fits exactly inside level 3.1. Safari sets its decoder up from the level
+WebRTC negotiated and refuses a stream claiming more, so it showed a black
+window while Chrome and Edge decoded the same bytes without complaint. The
+level is recomputed from the picture and rewritten in the parameter sets as
+they pass. It is only ever lowered, and nothing else is touched.
 
 ### Credentials
 

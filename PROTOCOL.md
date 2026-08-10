@@ -1156,6 +1156,97 @@ the alternative: "PCMA and PCMU are VERY low-quality codecs. They support only
 The backchannel keeps its own description and stays on G.711, because that is
 what the camera accepts; the two directions are negotiated separately.
 
+#### What a browser needs that ffmpeg does not
+
+The monitor's media is repackaged rather than re-encoded, which makes the
+bridge answerable for everything RTP says about it. Four separate faults each
+produced a working `ffprobe` and a black window in a browser, and every one of
+them was found by reading bytes rather than by reasoning about the layers
+above. It is worth stating why: ffmpeg ignores RTP timestamps and rebuilds
+timing from marker bits, tolerates its handshake being talked over, and pays no
+attention to what a stream claims about itself. Throughout the worst of this it
+reported a clean 19.6 fps and audio at the right level while nothing played.
+
+**One timestamp per access unit.** A picture leaves as a burst of a dozen or
+more fragments, and each was being stamped with the wall clock as it went.
+Measured on the wire, 400 video packets carried **357 distinct timestamps** for
+26 pictures, the fragments of one picture landing one or two ticks apart. A
+decoder reads that literally — 357 pictures, microseconds long, none complete.
+RFC 6184 asks the opposite: every packet of an access unit carries one
+timestamp and the last carries the marker bit. The clock is now held until the
+marker closes the unit, kept strictly increasing so a burst cannot put two
+pictures inside one tick of the 90 kHz clock, and the parameter sets replayed
+ahead of a keyframe are dated with the unit they describe. After the fix the
+same measurement reads 28 distinct timestamps for 27 pictures, consecutive
+pictures 4513 ticks apart, which is 1/20 s exactly.
+
+**An audio clock that counts samples.** A timestamp records when audio was
+sampled, not when it happened to be forwarded. Each unit carries 320 samples,
+so the clock must advance by exactly 320; measured, it was advancing by nought
+or one, because it too was being taken from the wall clock at the moment of
+sending. It now counts samples, catching up to wall time only after a gap long
+enough to mean the monitor stopped sending.
+
+**No media before PLAY.** RTSP clients set their tracks up one at a time over
+the same connection that interleaved media will share, and this server
+registered the client with the forwarder on the first SETUP. Media then began
+arriving where the second SETUP's response belonged. go2rtc reports it exactly:
+
+```
+can't get track error="malformed response: $\x00\x04Z..."
+```
+
+That is a video packet, not a response. The client loses the track it was
+setting up — audio, since video is negotiated first — and carries on with what
+it has. It hides well: a client that finishes both SETUPs before the camera
+connection comes up sees nothing wrong, which covers every cold probe and most
+ffmpeg runs, while a client attaching to a stream already in flight is flooded
+immediately. RFC 2326 puts the start of the stream at PLAY, and this is why.
+
+**A level the picture actually needs.** The monitor's SPS declares `4d 00 33` —
+Main profile, level **5.1** — for 1280x720 at 20 fps. That picture is 3600
+macroblocks, exactly level 3.1's ceiling, at a fifth of the macroblock rate 3.1
+permits; 5.1 is the ceiling for 4K. The declaration is simply wrong at source.
+
+Safari believes it. It configures its decoder from the level WebRTC negotiated,
+which is 3.1 from the browser's own offer, and refuses a stream claiming more:
+a black window and a reconnect loop, while go2rtc showed it connected and
+sending (`SEND h264 packets=3105`, `SEND pcm_alaw packets=778`). It is a
+decoder refusal, not a connection failure. Safari also greys out MSE playback
+of the same stream, refusing `avc1.4D0033` outright. Chrome and Edge ignore the
+claim and decode the identical bytes, which is why this looked for hours like a
+Home Assistant fault.
+
+The proof came before the fix. Republishing the stream through ffmpeg with
+`-c:v copy -bsf:v h264_metadata=level=31`, so that not one coded bit differs
+and only the declaration changes, made Safari play it immediately with sound.
+The bridge now computes the level the picture needs from the frame size and
+rate, by H.264 Annex A table A-1, and rewrites `level_idc` in the parameter
+sets as they pass. It is only ever lowered — a level below the true requirement
+is the one direction that could break a decoder trusting it — and nothing else
+in the stream is altered.
+
+#### What the consumers downstream will and will not carry
+
+Two constraints in Home Assistant shaped all of the above, and neither is
+visible from the bridge:
+
+- **Its `stream` integration accepts `aac` and `mp3` only.** Any other audio
+  codec is dropped silently on the HLS path, so PCM can never be heard there
+  whatever the bridge sends. Audio reaches a browser only over WebRTC, where
+  go2rtc converts `PCM/16000` to `PCMA/8000` itself.
+- **Its frontend renders both players and keeps WebRTC only when WebRTC reports
+  video.** Anything that stops a browser assembling a picture — the timestamps,
+  the lost audio track, the level — silently demotes the stream to HLS, and
+  with it the audio. A stream that plays with a few seconds of delay and no
+  sound is the signature of that fallback, not of a fault in the stream.
+
+Dashboard cards are muted unconditionally: `hui-image` renders
+`<ha-camera-stream muted>` with no controls, and the picture-entity card
+disables pointer events over the video. Browsers refuse to autoplay with sound,
+so every Lovelace live view is silent by design. Audio requires the camera's
+more-info dialog, which gets controls, or a card that exposes an unmute.
+
 ### 17. Completed Architecture
 
 With the streaming path mapped, the end-to-end local pipeline is:
