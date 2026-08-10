@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"syscall"
+	"time"
 
 	"avent-webrtc-bridge/pkg/core"
 	"avent-webrtc-bridge/pkg/utils"
@@ -59,10 +60,11 @@ func (d direction) channel(c *RTPClient) byte {
 // Video and audio arrive on separate goroutines, so each gets its own lock and
 // its own scratch buffer rather than contending on one forwarder-wide mutex.
 type streamState struct {
-	mu sync.Mutex
+	mu        sync.Mutex
+	clockRate uint64
 
-	tsBase    uint32
-	tsStarted bool
+	timeStart time.Time
+	started   bool
 	logged    bool
 
 	// H264 parameter sets, replayed ahead of a keyframe for late joiners.
@@ -110,6 +112,8 @@ type RTPClient struct {
 func NewRTPForwarder() *RTPForwarder {
 	return &RTPForwarder{
 		clients: make(map[string]*RTPClient),
+		video:   streamState{clockRate: 90000},
+		audio:   streamState{clockRate: audioRate},
 	}
 }
 
@@ -322,18 +326,24 @@ func (s *streamState) cacheSTAP(packet *rtp.Packet) {
 	}
 }
 
-// rebase shifts a source timestamp so the session starts near zero, keeping the
-// spacing between packets. The source value is what groups the fragments of one
-// picture into an access unit, so it has to survive: stamping each packet with
-// the wall clock instead leaves a decoder with no frame boundaries, and it
-// gives up after a few packets with "no dts". Callers hold s.mu; uint32 wraps,
-// as RTP expects.
-func (s *streamState) rebase(timestamp uint32) uint32 {
-	if !s.tsStarted {
-		s.tsBase = timestamp
-		s.tsStarted = true
+// rtpTicks converts elapsed wall-clock time into RTP timestamp units without
+// floating point. Seconds and remainder are scaled separately so a long-running
+// session cannot overflow the intermediate product; the uint32 result wraps,
+// which is what RTP expects.
+func rtpTicks(elapsed time.Duration, clockRate uint64) uint32 {
+	sec := uint64(elapsed / time.Second)
+	rem := uint64(elapsed % time.Second)
+	return uint32(sec*clockRate + rem*clockRate/uint64(time.Second))
+}
+
+// elapsed returns the time since the first packet of this direction, starting
+// the clock on first use. Callers hold s.mu.
+func (s *streamState) elapsed() time.Duration {
+	if !s.started {
+		s.timeStart = time.Now()
+		s.started = true
 	}
-	return timestamp - s.tsBase
+	return time.Since(s.timeStart)
 }
 
 // marshal serialises packet into the direction's scratch buffer, leaving room
@@ -360,7 +370,7 @@ func (rf *RTPForwarder) ForwardVideoPacket(packet *rtp.Packet) {
 		return
 	}
 
-	packet.Timestamp = s.rebase(packet.Timestamp)
+	packet.Timestamp = rtpTicks(s.elapsed(), s.clockRate)
 
 	// Cache SPS (7), PPS (8), and STAP-A (24) which may carry both.
 	nalType := getNALType(packet)
@@ -373,11 +383,8 @@ func (rf *RTPForwarder) ForwardVideoPacket(packet *rtp.Packet) {
 		s.cacheSTAP(packet)
 	}
 
-	// Before an IDR keyframe (5), replay the cached parameter sets. They belong
-	// to the access unit they introduce, so they carry its timestamp.
+	// Before an IDR keyframe (5), replay the cached parameter sets.
 	if nalType == 5 && s.sps != nil && s.pps != nil {
-		s.sps.Timestamp = packet.Timestamp
-		s.pps.Timestamp = packet.Timestamp
 		rf.forward(s, s.sps, videoChannel)
 		rf.forward(s, s.pps, videoChannel)
 	}
@@ -395,7 +402,7 @@ func (rf *RTPForwarder) ForwardAudioPacket(packet *rtp.Packet) {
 		return
 	}
 
-	packet.Timestamp = s.rebase(packet.Timestamp)
+	packet.Timestamp = rtpTicks(s.elapsed(), s.clockRate)
 	rf.forward(s, packet, audioChannel)
 }
 
@@ -462,7 +469,7 @@ func (rf *RTPForwarder) Stop() {
 
 	for _, s := range []*streamState{&rf.video, &rf.audio} {
 		s.mu.Lock()
-		s.tsStarted, s.logged = false, false
+		s.started, s.logged = false, false
 		s.sps, s.pps = nil, nil
 		s.mu.Unlock()
 	}

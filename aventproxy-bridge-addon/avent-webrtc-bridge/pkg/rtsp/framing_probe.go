@@ -20,15 +20,17 @@ const framingSample = 300
 // only be answered against real hardware, so the answer is measured here and
 // logged rather than assumed. Remove this once the framing is implemented.
 type framingProbe struct {
-	seen      int
-	continued int
-	byClock   int
-	byPicture int
-	units     accessUnits
-	lastTS    uint64
-	opening   [32]int
-	following [32]int
-	reported  bool
+	seen       int
+	continued  int
+	byClock    int
+	byPicture  int
+	sliceStart int // fragments that begin a coded slice
+	firstMB    int // and how many of those say first_mb_in_slice is zero
+	units      accessUnits
+	lastTS     uint64
+	opening    [32]int
+	following  [32]int
+	reported   bool
 }
 
 // observe folds one frame into the measurement, reporting once it has enough.
@@ -44,6 +46,15 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 	}
 	if p.units.starts(frame.NAL) {
 		p.byPicture++
+	}
+
+	// A picture is meant to begin at a slice whose first macroblock is zero.
+	// When that never holds, the boundary is somewhere else entirely.
+	if nalType, begins := nalTypeOf(frame.NAL); begins && isVCL(nalType) {
+		p.sliceStart++
+		if firstMBIsZero(frame.NAL) {
+			p.firstMB++
+		}
 	}
 
 	nalType := frame.NAL[0] & 0x1f
@@ -66,8 +77,10 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 func (p *framingProbe) summary() string {
 	return fmt.Sprintf(
 		"%d messages, %d declare more than they carry, %d access units by picture "+
-			"(%d by the monitor's clock); opening a unit: %s; continuing one: %s",
-		p.seen, p.continued, p.byPicture, p.byClock, histogram(p.opening), histogram(p.following),
+			"(%d by the monitor's clock), %d slice starts of which %d at macroblock zero; "+
+			"opening a unit: %s; continuing one: %s",
+		p.seen, p.continued, p.byPicture, p.byClock, p.sliceStart, p.firstMB,
+		histogram(p.opening), histogram(p.following),
 	)
 }
 
