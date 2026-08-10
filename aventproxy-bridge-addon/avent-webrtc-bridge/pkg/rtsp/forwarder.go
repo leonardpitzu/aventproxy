@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -125,15 +126,36 @@ func NewRTPForwarder() *RTPForwarder {
 	}
 }
 
-func dialLocalUDP(port int) (*net.UDPConn, error) {
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("localhost:%d", port))
+// dialClientUDP opens a connected socket towards the address a client asked for
+// its media on. RFC 2326 places that at the source address of the RTSP control
+// connection, which is what `clientHost` reads; a client-supplied `destination=`
+// is deliberately ignored, since honouring one would let any caller aim the
+// stream at a third party and turn the bridge into an RTP reflector.
+func dialClientUDP(host string, port int) (*net.UDPConn, error) {
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}
 	return net.DialUDP("udp", nil, addr)
 }
 
-func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPort int) error {
+// clientHost is the host part of an RTSP control connection's peer address.
+func clientHost(conn net.Conn) string {
+	if conn == nil || conn.RemoteAddr() == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
+func (rf *RTPForwarder) AddUDPClient(sessionID, host string, videoRTPPort, audioRTPPort int) error {
+	if host == "" {
+		return fmt.Errorf("no destination address for UDP client %s", sessionID)
+	}
+
 	rf.mutex.Lock()
 	defer rf.mutex.Unlock()
 
@@ -143,10 +165,18 @@ func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPor
 		client.audioRTPPort = audioRTPPort
 
 		if videoRTPPort > 0 && client.videoConn == nil {
-			client.videoConn, _ = dialLocalUDP(videoRTPPort)
+			conn, err := dialClientUDP(host, videoRTPPort)
+			if err != nil {
+				return fmt.Errorf("failed to create video UDP connection: %w", err)
+			}
+			client.videoConn = conn
 		}
 		if audioRTPPort > 0 && client.audioConn == nil {
-			client.audioConn, _ = dialLocalUDP(audioRTPPort)
+			conn, err := dialClientUDP(host, audioRTPPort)
+			if err != nil {
+				return fmt.Errorf("failed to create audio UDP connection: %w", err)
+			}
+			client.audioConn = conn
 		}
 		return nil
 	}
@@ -159,7 +189,7 @@ func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPor
 	}
 
 	if videoRTPPort > 0 {
-		conn, err := dialLocalUDP(videoRTPPort)
+		conn, err := dialClientUDP(host, videoRTPPort)
 		if err != nil {
 			return fmt.Errorf("failed to create video UDP connection: %w", err)
 		}
@@ -167,7 +197,7 @@ func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPor
 	}
 
 	if audioRTPPort > 0 {
-		conn, err := dialLocalUDP(audioRTPPort)
+		conn, err := dialClientUDP(host, audioRTPPort)
 		if err != nil {
 			client.close()
 			return fmt.Errorf("failed to create audio UDP connection: %w", err)
@@ -177,8 +207,8 @@ func (rf *RTPForwarder) AddUDPClient(sessionID string, videoRTPPort, audioRTPPor
 
 	rf.clients[sessionID] = client
 
-	core.Logger.Trace().Msgf("Added UDP RTP client %s (video port:%d, audio port:%d)",
-		sessionID, videoRTPPort, audioRTPPort)
+	core.Logger.Trace().Msgf("Added UDP RTP client %s at %s (video port:%d, audio port:%d)",
+		sessionID, host, videoRTPPort, audioRTPPort)
 	return nil
 }
 

@@ -56,7 +56,7 @@ func TestForwardIsRaceFreeWhileClientsChurn(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for time.Now().Before(deadline) {
-			if err := rf.AddUDPClient("udp-session", 0, 0); err != nil {
+			if err := rf.AddUDPClient("udp-session", "127.0.0.1", 0, 0); err != nil {
 				t.Errorf("add udp client: %v", err)
 				return
 			}
@@ -135,4 +135,112 @@ func TestRTPTicksStaysExactOverLongSessions(t *testing.T) {
 			t.Errorf("rtpTicks(%s) = %d, want %d", tc.elapsed, got, tc.want)
 		}
 	}
+}
+
+// TestDialClientUDPTargetsTheGivenHost pins the destination of a UDP media
+// socket to the address passed in. It used to resolve "localhost" regardless,
+// so RTP over UDP silently went nowhere for any client not on this host, and a
+// test that only counted errors scored that as a clean run.
+func TestDialClientUDPTargetsTheGivenHost(t *testing.T) {
+	// TEST-NET-1 (RFC 5737): never routable, so nothing leaves the machine.
+	conn, err := dialClientUDP("192.0.2.10", 5004)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	if got := conn.RemoteAddr().String(); got != "192.0.2.10:5004" {
+		t.Errorf("RTP destination is %s, want 192.0.2.10:5004", got)
+	}
+}
+
+// TestUDPClientReceivesOffHost forwards a packet to a socket bound to a real
+// non-loopback address of this machine, which is the case the old code lost.
+func TestUDPClientReceivesOffHost(t *testing.T) {
+	host := nonLoopbackIPv4(t)
+
+	listener, err := net.ListenPacket("udp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		t.Fatalf("listen on %s: %v", host, err)
+	}
+	defer listener.Close()
+
+	port := listener.LocalAddr().(*net.UDPAddr).Port
+
+	rf := NewRTPForwarder()
+	defer rf.Stop()
+
+	if err := rf.AddUDPClient("udp-session", host, port, 0); err != nil {
+		t.Fatalf("add udp client: %v", err)
+	}
+	rf.ForwardVideoPacket(testPacket(0x65, 0x88)) // IDR
+
+	buf := make([]byte, 2048)
+	if err := listener.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	n, _, err := listener.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("no RTP arrived at %s:%d: %v", host, port, err)
+	}
+	if n == 0 {
+		t.Fatal("received an empty datagram")
+	}
+}
+
+func TestClientHostReadsThePeerAddress(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			close(accepted)
+			return
+		}
+		accepted <- conn
+	}()
+
+	dialed, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer dialed.Close()
+
+	conn, ok := <-accepted
+	if !ok {
+		t.Fatal("accept failed")
+	}
+	defer conn.Close()
+
+	if got := clientHost(conn); got != "127.0.0.1" {
+		t.Errorf("clientHost = %q, want 127.0.0.1", got)
+	}
+	if got := clientHost(nil); got != "" {
+		t.Errorf("clientHost(nil) = %q, want empty", got)
+	}
+}
+
+func nonLoopbackIPv4(t *testing.T) string {
+	t.Helper()
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Skipf("no interface list available: %v", err)
+	}
+	for _, addr := range addrs {
+		ipnet, ok := addr.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() {
+			continue
+		}
+		if ip := ipnet.IP.To4(); ip != nil {
+			return ip.String()
+		}
+	}
+	t.Skip("host has no non-loopback IPv4 address")
+	return ""
 }
