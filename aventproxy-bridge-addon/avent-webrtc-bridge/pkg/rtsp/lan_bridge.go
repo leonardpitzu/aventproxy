@@ -149,9 +149,11 @@ func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 	}
 	lb.framing.observe(frame, lb.camera.DeviceName, lb.client)
 
+	nal := correctSPSLevel(frame.NAL, minLevel(frame.Width, frame.Height, frame.FPS))
+
 	// The timestamp is the forwarder's to set: it is one value per picture, and
 	// only the forwarder sees where a picture ends.
-	for _, payload := range lb.split(frame.NAL) {
+	for _, payload := range lb.split(nal) {
 		lb.forwarder.ForwardVideoPacket(&rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
