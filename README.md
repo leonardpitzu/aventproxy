@@ -120,7 +120,7 @@ live monitor, not inferred from the protocol.
 
 | Feature | Cloud | Local | What closing the gap needs |
 |---|---|---|---|
-| Temperature | yes | **on change** | DPS `207` is in the monitor's LAN key set and arrives as a push, but there is no local baseline — see *reading state* below |
+| Temperature | yes | **on change** | DPS `207` is in the monitor's LAN key set and arrives as a push. There is no local baseline only because nothing asks for one — see *reading state* below, which is now measured rather than assumed |
 | Motion detected | yes, via the poll | **partial** | DPS `212` pushes on a 3.5 session — measured at 1.3 s against 35 s for the poll — but is absent from the key set, so it exists only from the moment it fires |
 | Sound detected | yes, via the poll | **no** | `250` and `141` have never been seen on the LAN, and `212` carried motion but not sound on the same monitor. Needs a capture of a sound alert on 3.5 |
 | WiFi signal | yes, a separate call every 5 min | **no** | Not a data point at all; it comes from `tuya.m.device.upgrade.rssi.info.query`. No local equivalent is known |
@@ -138,10 +138,19 @@ live monitor, not inferred from the protocol.
 above at "on change". `lan.py` never asks the monitor what its state is — the
 comment there says the device does not answer `DP_QUERY` — so the local path
 sees only what the monitor volunteers, and the baseline comes from the cloud
-poll. A later capture contradicts that comment: on a 3.5 session the monitor
-answers `DP_QUERY` with 37 keys, temperature and every control among them. If
-that holds, the poll stops being the source of truth and becomes a backstop,
-which is the single biggest step left towards parity.
+poll.
+
+That comment is wrong, and now measurably so. Asked over a 3.5 session, an
+SCD953 answered `DP_QUERY` with all 37 keys, and the values matched what Home
+Assistant was showing from the cloud at that moment: temperature `2570` against
+25.7 °C, brightness `70`, lullaby volume `76`, mode `loop1`, both alert
+switches and privacy off. The comment was written against a 3.3 session, where
+it was true. The three alert keys — `212`, `250`, `141` — were absent, as the
+earlier capture also found.
+
+So the cloud poll can become a backstop rather than the source of truth for
+everything except alerts, which is the single biggest step left towards parity
+and needs nothing more than asking.
 
 #### The parent unit says all of this is possible
 
