@@ -1040,6 +1040,19 @@ Full LAN `DP_QUERY` key set, for the record:
 203 207 209 231 233 234 237 239 241 243 244 246 247 248 251 252 253
 ```
 
+**Confirmed live on 2026-08-10, read-only, against an SCD953 on a 3.5 session.**
+All 37 keys came back, and the values matched what Home Assistant was showing
+from the cloud at that moment: `207` = 2570 against 25.7 °C, `158` = 70,
+`209` = 76, `203` = `loop1`, `134`/`139` false, `237` = 0. So `lan.py`'s comment
+that this device does not answer `DP_QUERY` holds only for the 3.3 session it
+was written against. The other half of that comment — that `updatedps()` crashes
+the firmware — was not tested and should stay untested.
+
+The parent unit identifies several keys the capture could not. Everything in
+this set is something that display shows or lets you set, which is what the set
+is for: `233` and `234` at 2200 and 1600 are the temperature interval, in
+hundredths of a degree.
+
 **Correction from a later test.** The capture above was taken while the observing
 Home Assistant box held a **3.3** session. On a session negotiated at **3.5**,
 `212` *does* arrive as a push: an SCD951 owner on 2026.7.0-rc9 measured a motion

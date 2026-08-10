@@ -164,6 +164,19 @@ not yet found, not a capability the camera lacks — the parent unit is proof th
 camera serves alerts and sensors to a local peer. Whatever else the cloud API
 offers beyond what that display does is somebody else's fight.
 
+It explains the local stream too. It arrives at 1280x720 where the cloud offers
+1080p, and 720p is what the display's own screen shows: the local path is being
+handed the stream built for the parent unit. That is not a limitation to lift,
+it is what the channel is for. The same goes for the data points nobody had
+identified — `233` and `234` at 2200 and 1600 are the temperature interval the
+display lets you set, in hundredths of a degree.
+
+**And the display does all of this over wifi with no internet at all.** So the
+monitor's refusal to answer local signalling until it has reached Tuya is not a
+property of the device; it is a property of the path the app uses, which this
+bridge copies. Something the display does gets local access without that
+priming. Finding it would close the last two gaps at once.
+
 It also points at how to find them, with one practical obstacle. The display
 chooses its own link: it talks to the camera directly whenever it can, and only
 falls back to the house wifi once it is out of the camera's reach, which in
@@ -183,7 +196,8 @@ nothing in the cloud API would ever tell us.
 
 That leaves two things outstanding once state is read locally: talkback, and a
 camera that comes up with local access working while it is cut off from the
-internet.
+internet. The parent unit answers to both, which is why that capture is worth
+the walk to a neighbour's flat.
 
 One gap belongs to neither path and is parked: a monitor that has not reached
 Tuya since it booted ignores local signalling entirely, and nothing on the LAN
