@@ -57,9 +57,10 @@ type LANBridge struct {
 
 	client    *lan.Client
 	ssrc      uint32
+	seq       atomic.Uint32
 	audioSSRC uint32
+	audioSeq  atomic.Uint32
 	audioPT   uint8
-	audioTS   atomic.Uint32
 	audio     g711Encoder
 	audioWarn sync.Once
 	ctx       context.Context
@@ -143,8 +144,9 @@ func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 	}
 	lb.forwarder.ForwardVideoPacket(&rtp.Packet{
 		Header: rtp.Header{
-			Version:     2,
-			PayloadType: 96,
+			Version:        2,
+			PayloadType:    96,
+			SequenceNumber: uint16(lb.seq.Add(1)),
 			// The monitor's clock is microseconds; RTP wants 90 kHz ticks.
 			Timestamp: uint32(frame.Timestamp * 9 / 100),
 			SSRC:      lb.ssrc,
@@ -175,16 +177,12 @@ func (lb *LANBridge) onAudio(frame *lan.AudioFrame) {
 	if len(payload) == 0 {
 		return
 	}
-	// G.711 carries one sample per byte, so the timestamp advances by exactly
-	// the payload length. Counting samples keeps the clock exact where the
-	// monitor's own timestamp would only be as steady as its scheduler.
-	ts := lb.audioTS.Add(uint32(len(payload))) - uint32(len(payload))
 	lb.forwarder.ForwardAudioPacket(&rtp.Packet{
 		Header: rtp.Header{
-			Version:     2,
-			PayloadType: lb.audioPT,
-			Timestamp:   ts,
-			SSRC:        lb.audioSSRC,
+			Version:        2,
+			PayloadType:    lb.audioPT,
+			SequenceNumber: uint16(lb.audioSeq.Add(1)),
+			SSRC:           lb.audioSSRC,
 		},
 		Payload: payload,
 	})
