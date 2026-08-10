@@ -33,7 +33,7 @@ func (m *MQTTManager) GetClient(deviceId string) (*tuya.MQTTClient, error) {
 		return client, nil
 	}
 
-	core.Logger.Info().Msgf("Creating new MQTT client for device %s", deviceId)
+	core.Logger.Debug().Msgf("Creating new MQTT client for device %s", deviceId)
 	client, err := m.connect(deviceId)
 	if err != nil {
 		return nil, err

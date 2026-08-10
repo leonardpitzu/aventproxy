@@ -284,10 +284,12 @@ func (rf *RTPForwarder) snapshotClients(into []*RTPClient) []*RTPClient {
 }
 
 // isDeadClientError reports whether the peer is gone for good, as opposed to a
-// transient write failure worth logging.
+// transient write failure worth logging. A UDP peer that has closed its socket
+// reports ECONNREFUSED from the ICMP reply, once per packet until it is dropped.
 func isDeadClientError(err error) bool {
 	return errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, net.ErrClosed)
 }
 

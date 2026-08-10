@@ -260,7 +260,7 @@ func (s *RTSPServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	session := generateSessionID()
-	core.Logger.Info().Msgf("New RTSP connection established, session=%s", session)
+	core.Logger.Debug().Msgf("New RTSP connection established, session=%s", session)
 
 	reader := bufio.NewReader(conn)
 
@@ -293,7 +293,7 @@ func (s *RTSPServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	core.Logger.Info().Msgf("New RTSP connection for camera: %s (%s)", camera.DeviceName, camera.DeviceID)
+	core.Logger.Debug().Msgf("New RTSP connection for camera: %s (%s)", camera.DeviceName, camera.DeviceID)
 
 	// Create or get existing stream
 	stream, err := s.getOrCreateStream(camera, streamResolution, user)
@@ -390,7 +390,7 @@ func (s *RTSPServer) getOrCreateStream(camera *storage.CameraInfo, streamResolut
 
 	s.streams[streamId] = stream
 
-	core.Logger.Info().Msgf("Created new stream for camera: %s", camera.DeviceName)
+	core.Logger.Debug().Msgf("Created new stream for camera: %s", camera.DeviceName)
 	return stream, nil
 }
 

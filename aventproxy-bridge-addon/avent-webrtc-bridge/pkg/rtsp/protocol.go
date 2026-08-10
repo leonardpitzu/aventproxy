@@ -234,13 +234,11 @@ func (s *RTSPServer) parseRTSPRequestFromReader(reader *bufio.Reader) (*RTSPRequ
 		}
 	}
 
-	fmt.Println()
-	core.Logger.Trace().Msg("Received RTSP request:")
-	fmt.Printf("%s %s %s\n", request.Method, request.URL, request.Version)
-	for key, value := range request.Headers {
-		fmt.Printf("%s: %s\n", key, value)
+	if event := core.Logger.Debug(); event.Enabled() {
+		event.Int("cseq", request.CSeq).
+			Str("session", request.Headers["Session"]).
+			Msgf("%s %s", request.Method, request.URL)
 	}
-	fmt.Println()
 
 	return request, nil
 }
@@ -482,7 +480,7 @@ func (s *RTSPServer) handlePlay(client *RTSPClient, request *RTSPRequest) {
 
 	sendRTSPResponse(client.conn, 200, "OK", headers, "")
 
-	core.Logger.Info().Msgf("Starting RTSP stream for client %s", client.session)
+	core.Logger.Debug().Msgf("Starting RTSP stream for client %s", client.session)
 }
 
 func (s *RTSPServer) handleTeardown(client *RTSPClient, request *RTSPRequest) {
@@ -493,7 +491,7 @@ func (s *RTSPServer) handleTeardown(client *RTSPClient, request *RTSPRequest) {
 
 	sendRTSPResponse(client.conn, 200, "OK", headers, "")
 
-	core.Logger.Info().Msgf("Tearing down RTSP stream for client %s", client.session)
+	core.Logger.Debug().Msgf("Tearing down RTSP stream for client %s", client.session)
 }
 
 func (s *RTSPServer) handleUnsupportedMethod(client *RTSPClient, request *RTSPRequest) {

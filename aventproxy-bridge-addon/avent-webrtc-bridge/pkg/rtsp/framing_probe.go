@@ -87,9 +87,11 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string, client *lan
 	p.seen++
 	if p.seen >= framingSample {
 		p.reported = true
-		core.Logger.Info().Msgf("LAN video framing for %s: %s", camera, p.summary())
+		core.Logger.Debug().Msgf("LAN video framing for %s: %s", camera, p.summary())
 		if client != nil {
-			core.Logger.Info().Msgf("LAN media channel for %s: %s", camera, readLoopCounts(client.Snapshot()))
+			stats := client.Snapshot()
+			core.Logger.Info().Msgf("LAN media channel for %s: %s", camera, readLoopCounts(stats))
+			core.Logger.Debug().Msgf("LAN raw video for %s: %s", camera, strings.Join(stats.Raw, " "))
 		}
 	}
 }
@@ -109,9 +111,9 @@ func readLoopCounts(s lan.Stats) string {
 	}
 	return fmt.Sprintf(
 		"%d messages read, %d undecryptable, %d malformed, %d video in %d frames, %d audio; "+
-			"sub-headers %d long / %d short; discarded commands: %s; raw video: %s",
+			"sub-headers %d long / %d short; discarded commands: %s",
 		s.Reads, s.OpenErrors, s.Malformed, s.Video, s.Frames, s.Audio,
-		s.LongForm, s.ShortForm, discarded, strings.Join(s.Raw, " "),
+		s.LongForm, s.ShortForm, discarded,
 	)
 }
 
