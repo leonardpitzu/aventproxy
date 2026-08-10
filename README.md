@@ -143,6 +143,30 @@ answers `DP_QUERY` with 37 keys, temperature and every control among them. If
 that holds, the poll stops being the source of truth and becomes a backstop,
 which is the single biggest step left towards parity.
 
+#### The parent unit says all of this is possible
+
+The camera ships with a portable display that talks to it directly, and joins
+the house wifi when a known network is in range. On that display: motion and
+sound alerts, lullaby and night light control, privacy mode, temperature and a
+signal reading. No account, no internet.
+
+That settles the question the table above cannot. Every "no" in it is a channel
+not yet found, not a capability the camera lacks — the parent unit is proof the
+camera serves alerts and sensors to a local peer. Whatever else the cloud API
+offers beyond what that display does is somebody else's fight.
+
+It also points at how to find them. The parent unit's exchange with the camera
+is capturable the same way the phone's was: put the display on the house wifi
+and watch from the camera's own access point, the rig described in
+[PROTOCOL.md](PROTOCOL.md). That one capture should answer how sound alerts
+reach a local peer when `250` and `141` never appear in a `DP_QUERY`, and
+whether the signal reading is wifi strength or the camera-to-display link,
+which nothing in the cloud API would tell us.
+
+That leaves two things outstanding once state is read locally: talkback, and a
+camera that comes up with local access working while it is cut off from the
+internet.
+
 One gap belongs to neither path and is parked: a monitor that has not reached
 Tuya since it booted ignores local signalling entirely, and nothing on the LAN
 can stand in for that. See the paragraphs above.
