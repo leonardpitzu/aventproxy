@@ -67,6 +67,14 @@ type streamState struct {
 	started   bool
 	logged    bool
 
+	// One timestamp per access unit, held open until the marker bit closes it.
+	auTimestamp uint32
+	auOpen      bool
+
+	// The audio clock counts samples, not arrivals.
+	audioTime uint32
+	lastAudio time.Time
+
 	// H264 parameter sets, replayed ahead of a keyframe for late joiners.
 	sps *rtp.Packet
 	pps *rtp.Packet
@@ -348,6 +356,45 @@ func (s *streamState) elapsed() time.Duration {
 	return time.Since(s.timeStart)
 }
 
+// accessUnitStamp is the timestamp every packet of the current picture carries.
+// A picture is sent as a burst of fragments, so stamping each one as it leaves
+// would date the same picture at a spread of instants; a decoder reading those
+// literally sees a separate frame per fragment and can assemble none of them.
+// The clock therefore only moves when the marker bit ends a unit.
+func (s *streamState) accessUnitStamp() uint32 {
+	if s.auOpen {
+		return s.auTimestamp
+	}
+
+	first := !s.started
+	next := rtpTicks(s.elapsed(), s.clockRate)
+	// Pictures delivered in a burst can land inside one tick, and two units
+	// sharing a timestamp are one picture as far as a decoder is concerned.
+	if !first && int32(next-s.auTimestamp) <= 0 {
+		next = s.auTimestamp + 1
+	}
+
+	s.auTimestamp, s.auOpen = next, true
+	return s.auTimestamp
+}
+
+// audioStamp advances the audio clock by the samples this packet carries,
+// which is what a continuous stream requires: the timestamp marks when the
+// audio was sampled, not when it happened to arrive. A long silence means the
+// monitor stopped sending, so the clock catches up to wall time rather than
+// pretending no time passed.
+func (s *streamState) audioStamp(samples int) uint32 {
+	now := time.Now()
+	if !s.lastAudio.IsZero() && now.Sub(s.lastAudio) > time.Second {
+		s.audioTime = rtpTicks(s.elapsed(), s.clockRate)
+	}
+	s.lastAudio = now
+
+	stamp := s.audioTime
+	s.audioTime += uint32(samples)
+	return stamp
+}
+
 // marshal serialises packet into the direction's scratch buffer, leaving room
 // for an interleaving header. The RTP bytes start at interleaveHeaderLen.
 func (s *streamState) marshal(packet *rtp.Packet) ([]byte, error) {
@@ -367,12 +414,16 @@ func (rf *RTPForwarder) ForwardVideoPacket(packet *rtp.Packet) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// The media clock runs whether or not anyone is listening.
+	packet.Timestamp = s.accessUnitStamp()
+	if packet.Marker {
+		defer func() { s.auOpen = false }()
+	}
+
 	s.snapshot = rf.snapshotClients(s.snapshot)
 	if len(s.snapshot) == 0 {
 		return
 	}
-
-	packet.Timestamp = rtpTicks(s.elapsed(), s.clockRate)
 
 	// Cache SPS (7), PPS (8), and STAP-A (24) which may carry both.
 	nalType := getNALType(packet)
@@ -385,8 +436,11 @@ func (rf *RTPForwarder) ForwardVideoPacket(packet *rtp.Packet) {
 		s.cacheSTAP(packet)
 	}
 
-	// Before an IDR keyframe (5), replay the cached parameter sets.
+	// Before an IDR keyframe (5), replay the cached parameter sets. They
+	// describe this picture, so they belong to its access unit.
 	if nalType == 5 && s.sps != nil && s.pps != nil {
+		s.sps.Timestamp = packet.Timestamp
+		s.pps.Timestamp = packet.Timestamp
 		rf.forward(s, s.sps, videoChannel)
 		rf.forward(s, s.pps, videoChannel)
 	}
@@ -399,12 +453,13 @@ func (rf *RTPForwarder) ForwardAudioPacket(packet *rtp.Packet) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	packet.Timestamp = s.audioStamp(len(packet.Payload) / audioBytesPerSample)
+
 	s.snapshot = rf.snapshotClients(s.snapshot)
 	if len(s.snapshot) == 0 {
 		return
 	}
 
-	packet.Timestamp = rtpTicks(s.elapsed(), s.clockRate)
 	rf.forward(s, packet, audioChannel)
 }
 

@@ -12,9 +12,10 @@ import (
 // of this, packs PCM into FLAC for MSE and HLS and converts it to PCMA itself
 // for WebRTC, so the lossy step bought nothing and cost half the bandwidth.
 const (
-	audioRate        = 16000
-	audioPayloadType = 97
-	audioRtpmap      = "L16/16000"
+	audioRate           = 16000
+	audioPayloadType    = 97
+	audioRtpmap         = "L16/16000"
+	audioBytesPerSample = 2
 )
 
 // pcmLEtoBE swaps the monitor's little-endian samples into the network order
