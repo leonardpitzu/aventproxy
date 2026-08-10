@@ -78,14 +78,17 @@ const (
 	rawEvery   = 100
 )
 
-func (c *Client) sample(declared int, ts uint64, payload []byte) {
+func (c *Client) sample(msg []byte, declared int, payload []byte) {
 	c.statsMu.Lock()
 	defer c.statsMu.Unlock()
 	if len(c.stats.Raw) >= rawSamples || c.stats.Video%rawEvery != 1 {
 		return
 	}
-	c.stats.Raw = append(c.stats.Raw, fmt.Sprintf("#%d d%d/c%d t%d:%s",
-		c.stats.Video, declared, len(payload), ts, hex.EncodeToString(payload[:min(len(payload), 4)])))
+	// From the sub-header to a little past where the payload is assumed to
+	// start. A payload that begins eight bytes early shows up plainly here.
+	end := min(len(msg), mediaHeaderLen+subHeaderLen+8)
+	c.stats.Raw = append(c.stats.Raw, fmt.Sprintf("#%d d%d/c%d %s",
+		c.stats.Video, declared, len(payload), hex.EncodeToString(msg[mediaHeaderLen:end])))
 }
 
 func (c *Client) count(field *int) {
@@ -322,7 +325,7 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		switch cmd {
 		case CmdMediaVideo:
 			c.count(&c.stats.Video)
-			c.sample(declared, ts, payload)
+			c.sample(msg, declared, payload)
 			frame := video.add(msg, ts, declared, payload)
 			if frame != nil && c.onFrame != nil {
 				c.count(&c.stats.Frames)
