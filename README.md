@@ -17,7 +17,7 @@ Video and control run **over the local network**, with the Tuya cloud used only 
 
 | Feature | Entity | Description |
 |---|---|---|
-| Live video | `camera` | 1080p H.264, served as RTSP by the bridge add-on |
+| Live video | `camera` | H.264 over RTSP from the bridge add-on: 1280x720 on the local path, 1080p on the cloud fallback |
 | Temperature | `sensor` | Room temperature from the built-in sensor |
 | WiFi signal | `sensor` | Monitor's RSSI |
 | Night light | `switch` + `number` | On/off plus brightness 1-100 % |
@@ -120,7 +120,7 @@ live monitor, not inferred from the protocol.
 
 | Feature | Cloud | Local | What closing the gap needs |
 |---|---|---|---|
-| Temperature | yes | **on change** | DPS `207` is in the monitor's LAN key set and arrives as a push. There is no local baseline only because nothing asks for one — see *reading state* below, which is now measured rather than assumed |
+| Temperature | yes | **yes** | DPS `207` is in the monitor's LAN key set: read once when the session comes up, then pushed on change |
 | Motion detected | yes, via the poll | **partial** | DPS `212` pushes on a 3.5 session — measured at 1.3 s against 35 s for the poll — but is absent from the key set, so it exists only from the moment it fires |
 | Sound detected | yes, via the poll | **no** | `250` and `141` have never been seen on the LAN, and `212` carried motion but not sound on the same monitor. Needs a capture of a sound alert on 3.5 |
 | WiFi signal | yes, a separate call every 5 min | **no** | Not a data point at all; it comes from `tuya.m.device.upgrade.rssi.info.query`. No local equivalent is known |
@@ -134,23 +134,31 @@ live monitor, not inferred from the protocol.
 | Motion and sound alerts: switches, sensitivity | yes | **yes** | `134`, `139`, `106`, `140` |
 | Privacy mode | yes | **yes** | `237` |
 
-**Reading state** is the one worth attention, because it holds several rows
-above at "on change". `lan.py` never asks the monitor what its state is — the
-comment there says the device does not answer `DP_QUERY` — so the local path
-sees only what the monitor volunteers, and the baseline comes from the cloud
-poll.
+**Reading state** used to be the gap that held several rows above at "on
+change". `lan.py` never asked the monitor what its state was — the comment there
+said the device does not answer `DP_QUERY` — so the local path saw only what the
+monitor volunteered, and the baseline came from the cloud poll.
 
-That comment is wrong, and now measurably so. Asked over a 3.5 session, an
-SCD953 answered `DP_QUERY` with all 37 keys, and the values matched what Home
-Assistant was showing from the cloud at that moment: temperature `2570` against
-25.7 °C, brightness `70`, lullaby volume `76`, mode `loop1`, both alert
-switches and privacy off. The comment was written against a 3.3 session, where
-it was true. The three alert keys — `212`, `250`, `141` — were absent, as the
-earlier capture also found.
+That comment was written against a 3.3 session, where it was true, and it is
+false on 3.5. Asked over a 3.5 session, an SCD973/26 answered `DP_QUERY` with all
+37 keys, and the values matched what Home Assistant was showing from the cloud
+at that moment: temperature `2570` against 25.7 °C, brightness `70`, lullaby
+volume `76`, mode `loop1`, both alert switches and privacy off. The three alert
+keys — `212`, `250`, `141` — were absent, as the earlier capture also found.
 
-So the cloud poll can become a backstop rather than the source of truth for
-everything except alerts, which is the single biggest step left towards parity
-and needs nothing more than asking.
+The integration now asks. One `DP_QUERY` goes out per LAN session, immediately
+after it comes up, and its answer becomes the baseline; a firmware that refuses
+is left alone and the cloud poll carries on as before. It is a read and only a
+read — the query carries no data points, so asking cannot change a setting on
+the monitor.
+
+A baseline is deliberately not treated as an event. The answer can carry a
+retained alert value, and putting it through the push path would fire the motion
+and sound sensors on every reconnect, so it updates state without counting as
+news.
+
+So the cloud poll is now a backstop rather than the source of truth, for
+everything except alerts.
 
 #### The parent unit says all of this is possible
 
@@ -168,8 +176,10 @@ It explains the local stream too. It arrives at 1280x720 where the cloud offers
 1080p, and 720p is what the display's own screen shows: the local path is being
 handed the stream built for the parent unit. That is not a limitation to lift,
 it is what the channel is for. The same goes for the data points nobody had
-identified — `233` and `234` at 2200 and 1600 are the temperature interval the
-display lets you set, in hundredths of a degree.
+identified — `233` and `234` at 2200 and 1600 are the **Temperature alert**
+thresholds, in hundredths of a degree. The manual settles that one: the parent
+unit's Temperature alert menu sets a High and a Low value in whole degrees, and
+warns when the room leaves that band.
 
 **And the display does all of this over wifi with no internet at all.** So the
 monitor's refusal to answer local signalling until it has reached Tuya is not a
@@ -193,15 +203,22 @@ anywhere with a connection. The gate that matters belongs to the camera, not
 the account: today it must have reached Tuya since it last booted. Close that
 and the camera need never see the internet again.
 
-It also points at how to find them, with one practical obstacle. The display
-chooses its own link: it talks to the camera directly whenever it can, and only
-falls back to the house wifi once it is out of the camera's reach, which in
-practice means carrying it a long way off. Only the wifi case is worth
-capturing. Then both ends are on the house network, the exchange crosses the
-camera's own access point, and it should be the same Tuya LAN protocol the
-phone uses — readable with the `localKey` already in hand. The display's direct
-link is a separate radio association with a key nobody here holds, so sniffing
-it would yield ciphertext.
+It also points at how to find them, and the manual removes the guesswork about
+how. The parent unit has a **Connection to Baby Unit** menu with two settings:
+*Direct*, where the two units talk to each other on the pairing they were given
+in the factory, and *Auto: Direct or Wi-Fi*, which picks whichever link is
+better. Only the Wi-Fi case is worth capturing. Put the parent unit on *Auto*
+and far enough from the camera that direct is no longer the better link — the
+quoted indoor range is 50 m — and both ends are then on the house network, the
+exchange crosses the camera's own access point, and it should be the same Tuya
+LAN protocol the phone uses, readable with the `localKey` already in hand.
+
+Both links are 802.11 b/g/n on 2412-2462 MHz, so "direct" is a Wi-Fi
+association rather than a separate radio; it is still one this project holds no
+key for, so sniffing that mode would yield ciphertext. The two units are also
+paired for life — the manual states a parent unit only ever connects to the baby
+unit shipped in the same box — which is the clearest evidence yet that whatever
+authenticates it is written at manufacture.
 
 Since only the camera's side of the conversation is needed, and the camera is
 always on the house access point, the display can be anywhere once it has
@@ -210,10 +227,10 @@ reach a local peer when `250` and `141` appear in no `DP_QUERY`, and whether
 the signal reading is wifi strength or the camera-to-display link — which
 nothing in the cloud API would ever tell us.
 
-That leaves two things outstanding once state is read locally: talkback, and a
-camera that comes up with local access working while it is cut off from the
-internet. The parent unit answers to both, which is why that capture is worth
-the walk to a neighbour's flat.
+That leaves two things outstanding: talkback, and a camera that comes up with
+local access working while it is cut off from the internet. The parent unit
+answers to both, which is why that capture is worth the walk to a neighbour's
+flat.
 
 One gap belongs to neither path and is parked: a monitor that has not reached
 Tuya since it booted ignores local signalling entirely, and nothing on the LAN
@@ -277,6 +294,13 @@ The country matters. A Philips/Tuya account lives in one regional data centre an
 | Two-way audio | off | Ask the camera for talkback. Leave it off unless a client really speaks back: requesting audio makes the monitor restart a playing lullaby |
 
 A wrong bridge host makes the camera entity flap between `Unavailable` and `Idle`, because Home Assistant marks a camera unavailable while its stream cannot be opened.
+
+A bridge hosted outside the add-on also needs RTSP over UDP to work, and until
+2.5.1 it did not: media was sent to `localhost` whatever address the client had
+asked for, so anything not on the bridge's own machine received nothing. It now
+goes to the address the RTSP control connection came from, as RFC 2326 says it
+should. A `destination=` supplied by the client is ignored on purpose, since
+honouring one would let a caller aim the stream at a third party.
 
 ## Automations
 

@@ -829,6 +829,12 @@ The device responds to the Tuya LAN protocol (version 3.3) on the local network.
 - Cloud API-initiated changes (commands we send) are NOT echoed on LAN
 - The persistent socket drops periodically (error 904 "Unexpected Payload"); auto-reconnect handles this
 
+**Superseded.** The `updatedps()` priming above is a record of the first attempt,
+not current practice: it is documented to crash this firmware and was never
+adopted. The session is primed with `DP_QUERY(10)` instead, which is what the
+phone app sends and what the shipping integration sends \u2014 see the 3.5 key set in
+Phase 10.
+
 #### Alert Event Discovery
 
 Controlled testing with motion and sound detection revealed the event DPS codes:
@@ -1040,7 +1046,7 @@ Full LAN `DP_QUERY` key set, for the record:
 203 207 209 231 233 234 237 239 241 243 244 246 247 248 251 252 253
 ```
 
-**Confirmed live on 2026-08-10, read-only, against an SCD953 on a 3.5 session.**
+**Confirmed live on 2026-08-10, read-only, against an SCD973/26 on a 3.5 session.**
 All 37 keys came back, and the values matched what Home Assistant was showing
 from the cloud at that moment: `207` = 2570 against 25.7 °C, `158` = 70,
 `209` = 76, `203` = `loop1`, `134`/`139` false, `237` = 0. So `lan.py`'s comment
@@ -1048,9 +1054,25 @@ that this device does not answer `DP_QUERY` holds only for the 3.3 session it
 was written against. The other half of that comment — that `updatedps()` crashes
 the firmware — was not tested and should stay untested.
 
+**Implemented the same day.** `lan.py` now sends one `DP_QUERY` per LAN session,
+straight after the session comes up and before the receive loop, so it can never
+share the socket with a keep-alive. A firmware that answers with an error frame
+is left alone and the cloud poll goes on providing the baseline.
+
+The command is a read and nothing else, which is worth stating precisely because
+the monitor sits in a child's room. In tinytuya's command table `DP_QUERY` is
+10, `CONTROL` — the write path — is 7, and `UPDATEDPS` is 18. `status()`
+generates command 10 with no data points in the body, so asking cannot alter a
+setting. `updatedps()` remains unused and untested.
+
+One trap is worth recording. The answer is state, not an event: fed through the
+push path it would replay any retained value in `250` or `141` on every
+reconnect and fire the alert sensors each time. The coordinator therefore takes
+a baseline flag and skips the event bookkeeping when it is set.
+
 The parent unit identifies several keys the capture could not. Everything in
 this set is something that display shows or lets you set, which is what the set
-is for: `233` and `234` at 2200 and 1600 are the temperature interval, in
+is for: `233` and `234` at 2200 and 1600 are the Temperature alert thresholds, in
 hundredths of a degree.
 
 **Correction from a later test.** The capture above was taken while the observing
@@ -1110,7 +1132,7 @@ easiest landmark when reading a capture by eye.
 
 Getting this wrong is expensive and quiet. Reading a short-form message as the
 long form yields a declared length in the billions, and any sanity check on that
-number will drop the message; on an SCD953 that discarded roughly four fifths of
+number will drop the message; on an SCD973/26 that discarded roughly four fifths of
 the video, and it discarded a specific four fifths. Long-form messages carry the
 keyframes; the short form carries the FU-A fragments of NAL type 1, so what
 survives is IDR and nothing else — a stream that decodes into a handful of
@@ -1281,6 +1303,8 @@ RTSP re-publish  ->  Home Assistant
 ```
 
 Both transports are implemented and share the RTP forwarder, so everything downstream of signalling is the same code. The remaining cloud touch is the one-time credential lookup, and because those credentials are cached in the config entry, a monitor that has reached the cloud since booting streams with the WAN unplugged.
+
+State is read locally too: one `DP_QUERY` per LAN session supplies the baseline, which leaves the cloud poll as a backstop for the alert data points that never appear in that answer.
 
 ---
 
