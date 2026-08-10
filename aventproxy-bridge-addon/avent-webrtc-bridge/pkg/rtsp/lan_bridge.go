@@ -63,6 +63,7 @@ type LANBridge struct {
 	audioPT   uint8
 	audio     g711Encoder
 	audioWarn sync.Once
+	framing   framingProbe
 	ctx       context.Context
 	cancel    context.CancelFunc
 
@@ -142,6 +143,7 @@ func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 	if frame == nil || len(frame.NAL) < 2 {
 		return
 	}
+	lb.framing.observe(frame, lb.camera.DeviceName)
 	lb.forwarder.ForwardVideoPacket(&rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,

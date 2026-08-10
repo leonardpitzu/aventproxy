@@ -3,8 +3,10 @@ package lan
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -31,6 +33,7 @@ func NewLanCmd() *cobra.Command {
 		seconds   int
 		verbose   bool
 		dumpAudio string
+		dumpMedia string
 	)
 
 	cmd := &cobra.Command{
@@ -69,6 +72,16 @@ Example:
 				audioSink = f
 			}
 
+			var mediaSink *os.File
+			if dumpMedia != "" {
+				f, err := os.Create(dumpMedia)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				mediaSink = f
+			}
+
 			var frames, bytes int
 			var width, height, fps int
 			var audioFrames, audioBytes int
@@ -90,9 +103,22 @@ Example:
 				}
 			})
 
+			if mediaSink != nil {
+				var mu sync.Mutex
+				length := make([]byte, 4)
+				// Video and audio arrive on their own goroutines, so the length
+				// prefix and its message have to be written as one.
+				client.OnRawMedia = func(msg []byte) {
+					mu.Lock()
+					defer mu.Unlock()
+					binary.LittleEndian.PutUint32(length, uint32(len(msg)))
+					_, _ = mediaSink.Write(length)
+					_, _ = mediaSink.Write(msg)
+				}
+			}
+
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+45)*time.Second)
 			defer cancel()
-
 			fmt.Printf("connecting to %s ...\n", deviceID)
 			start := time.Now()
 			if err := client.Start(ctx); err != nil {
@@ -126,5 +152,6 @@ Example:
 	cmd.Flags().IntVar(&seconds, "seconds", 10, "how long to collect video")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "trace the protocol")
 	cmd.Flags().StringVar(&dumpAudio, "dump-audio", "", "write the raw audio units to this file")
+	cmd.Flags().StringVar(&dumpMedia, "dump-media", "", "write every decrypted media message, headers included, as length-prefixed records")
 	return cmd
 }

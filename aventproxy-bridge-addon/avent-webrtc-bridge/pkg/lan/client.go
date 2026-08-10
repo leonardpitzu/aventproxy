@@ -28,6 +28,12 @@ type Client struct {
 	// IP skips discovery when Home Assistant already resolved the monitor.
 	IP string
 
+	// OnRawMedia receives every decrypted media message, headers included,
+	// before anything is made of it. The framing above the payload can only be
+	// established against real hardware, so the `lan` diagnostic captures it
+	// here rather than guessing at it.
+	OnRawMedia func(msg []byte)
+
 	session *Session
 	sock    *net.UDPConn
 	router  *packetRouter
@@ -232,14 +238,17 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		if err != nil {
 			continue
 		}
-		cmd, ts, payload, ok := mediaPayload(msg)
+		if c.OnRawMedia != nil {
+			c.OnRawMedia(msg)
+		}
+		cmd, ts, declared, payload, ok := mediaPayload(msg)
 		if !ok {
 			continue
 		}
 		switch cmd {
 		case CmdMediaVideo:
 			if c.onFrame != nil {
-				c.onFrame(parseVideo(msg, ts, payload))
+				c.onFrame(parseVideo(msg, ts, declared, payload))
 			}
 		case CmdMediaAudio:
 			if c.onAudio != nil {

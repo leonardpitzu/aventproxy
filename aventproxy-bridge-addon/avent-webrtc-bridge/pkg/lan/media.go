@@ -114,6 +114,9 @@ type VideoFrame struct {
 	Height    int
 	FPS       int
 	Timestamp uint64
+	// Declared is the data length the sub-header claims. Larger than len(NAL)
+	// means the unit continues into the messages that follow.
+	Declared int
 	// NAL is an RTP payload, not a bare NAL: parameter sets arrive whole and
 	// slices arrive already fragmented as FU-A.
 	NAL []byte
@@ -146,32 +149,34 @@ func sampleRate(index uint16) int {
 // mediaPayload splits a decrypted media message into its command, timestamp
 // and data. Both streams share this framing; only the description bytes at
 // descOffset differ.
-func mediaPayload(msg []byte) (cmd uint32, ts uint64, payload []byte, ok bool) {
+func mediaPayload(msg []byte) (cmd uint32, ts uint64, declared int, payload []byte, ok bool) {
 	if len(msg) < mediaHeaderLen+subHeaderLen {
-		return 0, 0, nil, false
+		return 0, 0, 0, nil, false
 	}
 	sub := msg[mediaHeaderLen:]
 	length := int(binary.LittleEndian.Uint32(sub[:4]))
 	if length < subHeaderOverhead {
-		return 0, 0, nil, false
+		return 0, 0, 0, nil, false
 	}
 	payload = sub[subHeaderLen:]
-	if n := length - subHeaderOverhead; n >= 0 && n <= len(payload) {
-		payload = payload[:n]
+	declared = length - subHeaderOverhead
+	if declared >= 0 && declared <= len(payload) {
+		payload = payload[:declared]
 	}
 	if len(payload) == 0 {
-		return 0, 0, nil, false
+		return 0, 0, 0, nil, false
 	}
-	return binary.LittleEndian.Uint32(msg[:4]), binary.LittleEndian.Uint64(sub[4:12]), payload, true
+	return binary.LittleEndian.Uint32(msg[:4]), binary.LittleEndian.Uint64(sub[4:12]), declared, payload, true
 }
 
 // parseVideo turns a decrypted video message into a frame.
-func parseVideo(msg []byte, ts uint64, payload []byte) *VideoFrame {
+func parseVideo(msg []byte, ts uint64, declared int, payload []byte) *VideoFrame {
 	return &VideoFrame{
 		Width:     int(binary.LittleEndian.Uint16(msg[26:28])),
 		Height:    int(binary.LittleEndian.Uint16(msg[28:30])),
 		FPS:       int(msg[30]),
 		Timestamp: ts,
+		Declared:  declared,
 		NAL:       payload,
 	}
 }
