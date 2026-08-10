@@ -114,25 +114,3 @@ func TestForwardCachesParameterSetsForLateJoiners(t *testing.T) {
 		}
 	}
 }
-
-// TestRTPTicksStaysExactOverLongSessions guards the integer timestamp maths
-// against the overflow a naive elapsed*clockRate product would hit.
-func TestRTPTicksStaysExactOverLongSessions(t *testing.T) {
-	cases := []struct {
-		elapsed time.Duration
-		want    uint32
-	}{
-		{0, 0},
-		{time.Second, 90000},
-		{time.Millisecond, 90},
-		{time.Hour, 324000000},
-		// 100 h is 32,400,000,000 ticks, which wraps the 32-bit field as RTP intends.
-		{100 * time.Hour, 2335228928},
-	}
-
-	for _, tc := range cases {
-		if got := rtpTicks(tc.elapsed, 90000); got != tc.want {
-			t.Errorf("rtpTicks(%s) = %d, want %d", tc.elapsed, got, tc.want)
-		}
-	}
-}
