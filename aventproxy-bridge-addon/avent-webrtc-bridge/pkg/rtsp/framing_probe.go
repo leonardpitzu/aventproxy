@@ -1,6 +1,7 @@
 package rtsp
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -19,6 +20,10 @@ const framingSample = 300
 // first bytes say otherwise, and whether a picture spans several messages can
 // only be answered against real hardware, so the answer is measured here and
 // logged rather than assumed. Remove this once the framing is implemented.
+// framingSamples is how many units' leading bytes are reported verbatim. The
+// counts say what the payloads are not; only the bytes say what they are.
+const framingSamples = 8
+
 type framingProbe struct {
 	seen       int
 	continued  int
@@ -30,6 +35,7 @@ type framingProbe struct {
 	lastTS     uint64
 	opening    [32]int
 	following  [32]int
+	heads      []string
 	reported   bool
 }
 
@@ -57,6 +63,10 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 		}
 	}
 
+	if len(p.heads) < framingSamples {
+		p.heads = append(p.heads, fmt.Sprintf("%s(%d)", hex.EncodeToString(frame.NAL[:min(len(frame.NAL), 6)]), len(frame.NAL)))
+	}
+
 	nalType := frame.NAL[0] & 0x1f
 	if opensUnit {
 		p.opening[nalType]++
@@ -78,9 +88,9 @@ func (p *framingProbe) summary() string {
 	return fmt.Sprintf(
 		"%d messages, %d declare more than they carry, %d access units by picture "+
 			"(%d by the monitor's clock), %d slice starts of which %d at macroblock zero; "+
-			"opening a unit: %s; continuing one: %s",
+			"opening a unit: %s; continuing one: %s; first units: %s",
 		p.seen, p.continued, p.byPicture, p.byClock, p.sliceStart, p.firstMB,
-		histogram(p.opening), histogram(p.following),
+		histogram(p.opening), histogram(p.following), strings.Join(p.heads, " "),
 	)
 }
 
