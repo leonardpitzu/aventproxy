@@ -223,6 +223,9 @@ func (c *Client) login(aesKey []byte) error {
 
 func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []byte) {
 	buf := make([]byte, 65535)
+	// One assembler per conversation: a split payload is continued by the next
+	// message on the same stream.
+	var video videoAssembler
 	for {
 		if ctx.Err() != nil {
 			return
@@ -247,8 +250,9 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		}
 		switch cmd {
 		case CmdMediaVideo:
-			if c.onFrame != nil {
-				c.onFrame(parseVideo(msg, ts, declared, payload))
+			frame := video.add(msg, ts, declared, payload)
+			if frame != nil && c.onFrame != nil {
+				c.onFrame(frame)
 			}
 		case CmdMediaAudio:
 			if c.onAudio != nil {

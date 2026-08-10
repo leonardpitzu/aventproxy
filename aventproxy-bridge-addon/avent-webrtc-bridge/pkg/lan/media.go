@@ -181,6 +181,48 @@ func parseVideo(msg []byte, ts uint64, declared int, payload []byte) *VideoFrame
 	}
 }
 
+// maxUnitSize caps what one unit may claim, so a corrupt length cannot make the
+// assembler buffer without end. A 720p keyframe is tens of kilobytes.
+const maxUnitSize = 1 << 20
+
+// videoAssembler joins the messages that make up one payload.
+//
+// A message is not a payload on its own: the first one declares the whole
+// length and carries what fits, and the rest continue it. Forwarding the pieces
+// separately produces FU-A fragments that are cut in half, which a decoder
+// reports as impossible NAL types.
+type videoAssembler struct {
+	header   []byte
+	ts       uint64
+	declared int
+	buf      []byte
+}
+
+// add folds one message in, returning a frame once the unit is whole.
+func (a *videoAssembler) add(msg []byte, ts uint64, declared int, payload []byte) *VideoFrame {
+	if a.declared == 0 {
+		if declared <= len(payload) {
+			return parseVideo(msg, ts, declared, payload)
+		}
+		if declared > maxUnitSize {
+			return nil
+		}
+		a.header = append(a.header[:0], msg[:mediaHeaderLen]...)
+		a.ts, a.declared = ts, declared
+		a.buf = append(a.buf[:0], payload...)
+		return nil
+	}
+
+	a.buf = append(a.buf, payload...)
+	if len(a.buf) < a.declared {
+		return nil
+	}
+
+	frame := parseVideo(a.header, a.ts, a.declared, a.buf[:a.declared])
+	a.declared = 0
+	return frame
+}
+
 // parseAudio turns a decrypted audio message into a frame. The description
 // mirrors the video one: codec first, then the rate index and channel count in
 // the fields video uses for width and fps.
