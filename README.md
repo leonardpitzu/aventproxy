@@ -177,6 +177,22 @@ property of the device; it is a property of the path the app uses, which this
 bridge copies. Something the display does gets local access without that
 priming. Finding it would close the last two gaps at once.
 
+Temper the expectation, though. The camera and its display are sold as a pair
+and that display never sees a setup flow, so whatever authenticates it is
+almost certainly written at manufacture. Proving a path exists is not the same
+as being able to walk it. The capture is worth doing anyway, because the three
+outcomes all pay: the same Tuya session on 6668 would mean the gate is in the
+302 signalling and the `localKey` already opens it; a different protocol means
+new but tractable work; and ciphertext under a factory secret still says which
+port and service stay alive with no cloud behind them, which is more than is
+known now.
+
+None of this touches the credentials. `local_key`, `uid` and the P2P `password`
+are fetched once, cached, and never expire, and that fetch can happen from
+anywhere with a connection. The gate that matters belongs to the camera, not
+the account: today it must have reached Tuya since it last booted. Close that
+and the camera need never see the internet again.
+
 It also points at how to find them, with one practical obstacle. The display
 chooses its own link: it talks to the camera directly whenever it can, and only
 falls back to the house wifi once it is out of the camera's reach, which in
