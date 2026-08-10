@@ -109,12 +109,24 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return (self._lan_client.ip if self._lan_client else None) or ""
 
     @callback
-    def _on_lan_dps_update(self, dps: dict[str, Any]) -> None:
+    def _on_lan_dps_update(self, dps: dict[str, Any], baseline: bool = False) -> None:
+        """Merge DPS the LAN session reported into entity state.
+
+        A baseline is the answer to a DP_QUERY sent when the session comes up, so
+        it is state and not news: recording it as a push would let a retained
+        alert value fire the motion or sound sensor on every reconnect.
+        """
         if self.data is None:
             return
-        self.last_lan_dps = dict(dps)
-        self.lan_update_sequence += 1
-        _LOGGER.debug("LAN push for %s: %s", self.camera_name, truncated_dps(dps))
+        if not baseline:
+            self.last_lan_dps = dict(dps)
+            self.lan_update_sequence += 1
+        _LOGGER.debug(
+            "LAN %s for %s: %s",
+            "baseline" if baseline else "push",
+            self.camera_name,
+            truncated_dps(dps),
+        )
 
         dps = self._hold_lullaby_state(dps)
         merged = {**self.data, **dps}
