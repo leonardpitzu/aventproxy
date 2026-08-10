@@ -16,6 +16,7 @@ import (
 	"avent-webrtc-bridge/pkg/tuya"
 
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 )
 
 // h264ClockRate is the RTP timestamp rate H.264 always uses.
@@ -64,6 +65,7 @@ type LANBridge struct {
 	audio     g711Encoder
 	audioWarn sync.Once
 	framing   framingProbe
+	payloader codecs.H264Payloader
 	ctx       context.Context
 	cancel    context.CancelFunc
 
@@ -133,29 +135,54 @@ func (lb *LANBridge) Start() error {
 	return nil
 }
 
+// rtpMTU is the largest payload put in one packet. A datagram bigger than the
+// path allows is refused outright ("message too long"), and a whole NAL can
+// exceed it now that the pieces of one are joined before forwarding.
+const rtpMTU = 1200
+
 // onFrame hands one of the monitor's RTP payloads to the shared forwarder.
 //
-// The monitor already emits RTP payloads rather than raw NALs: parameter sets
-// arrive whole and slices arrive as FU-A fragments, so they only need a header.
-// Packetising them again would wrap one encapsulation in another and produce a
-// stream that flows but decodes to nothing.
+// The monitor emits RTP payloads rather than raw NALs, so they normally need
+// only a header: re-packetising an FU-A fragment would wrap one encapsulation
+// in another and produce a stream that flows but decodes to nothing. A whole
+// NAL too big for one packet is the exception, and only that gets fragmented.
 func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 	if frame == nil || len(frame.NAL) < 2 {
 		return
 	}
 	lb.framing.observe(frame, lb.camera.DeviceName)
-	lb.forwarder.ForwardVideoPacket(&rtp.Packet{
-		Header: rtp.Header{
-			Version:        2,
-			PayloadType:    96,
-			SequenceNumber: uint16(lb.seq.Add(1)),
-			// The monitor's clock is microseconds; RTP wants 90 kHz ticks.
-			Timestamp: uint32(frame.Timestamp * 9 / 100),
-			SSRC:      lb.ssrc,
-			Marker:    endsAccessUnit(frame.NAL),
-		},
-		Payload: frame.NAL,
-	})
+
+	timestamp := uint32(frame.Timestamp * 9 / 100) // the monitor counts microseconds
+	for _, payload := range lb.split(frame.NAL) {
+		lb.forwarder.ForwardVideoPacket(&rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    96,
+				SequenceNumber: uint16(lb.seq.Add(1)),
+				Timestamp:      timestamp,
+				SSRC:           lb.ssrc,
+				Marker:         endsAccessUnit(payload),
+			},
+			Payload: payload,
+		})
+	}
+}
+
+// split fragments a payload only when it is a whole NAL that will not fit.
+// Anything already fragmented is passed through untouched.
+func (lb *LANBridge) split(payload []byte) [][]byte {
+	if len(payload) <= rtpMTU {
+		return [][]byte{payload}
+	}
+	if nalType := payload[0] & 0x1f; nalType >= 28 {
+		// Already an aggregation or a fragment; re-wrapping it is the one thing
+		// that must not happen here.
+		return [][]byte{payload}
+	}
+	if out := lb.payloader.Payload(rtpMTU, payload); len(out) > 0 {
+		return out
+	}
+	return [][]byte{payload}
 }
 
 // onAudio hands one of the monitor's audio units to the shared forwarder.
