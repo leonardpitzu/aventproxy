@@ -59,6 +59,9 @@ type LANBridge struct {
 	client    *lan.Client
 	ssrc      uint32
 	seq       atomic.Uint32
+	units     accessUnits
+	unitTS    uint32
+	unitOpen  bool
 	audioSSRC uint32
 	audioSeq  atomic.Uint32
 	audioTS   atomic.Uint32
@@ -149,14 +152,21 @@ func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 	}
 	lb.framing.observe(frame, lb.camera.DeviceName)
 
-	timestamp := uint32(frame.Timestamp * 9 / 100) // the monitor counts microseconds
+	// Every packet of a picture carries the timestamp of the message that
+	// opened it. The monitor's own clock counts sends, so using it per packet
+	// leaves a decoder with no picture boundaries at all.
+	if lb.units.starts(frame.NAL) || !lb.unitOpen {
+		lb.unitTS = uint32(frame.Timestamp * 9 / 100) // the monitor counts microseconds
+		lb.unitOpen = true
+	}
+
 	for _, payload := range lb.split(frame.NAL) {
 		lb.forwarder.ForwardVideoPacket(&rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
 				PayloadType:    96,
 				SequenceNumber: uint16(lb.seq.Add(1)),
-				Timestamp:      timestamp,
+				Timestamp:      lb.unitTS,
 				SSRC:           lb.ssrc,
 				Marker:         endsAccessUnit(payload),
 			},

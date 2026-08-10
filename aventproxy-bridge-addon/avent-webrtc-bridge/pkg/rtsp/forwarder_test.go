@@ -115,24 +115,38 @@ func TestForwardCachesParameterSetsForLateJoiners(t *testing.T) {
 	}
 }
 
-// TestRTPTicksStaysExactOverLongSessions guards the integer timestamp maths
-// against the overflow a naive elapsed*clockRate product would hit.
-func TestRTPTicksStaysExactOverLongSessions(t *testing.T) {
-	cases := []struct {
-		elapsed time.Duration
-		want    uint32
-	}{
-		{0, 0},
-		{time.Second, 90000},
-		{time.Millisecond, 90},
-		{time.Hour, 324000000},
-		// 100 h is 32,400,000,000 ticks, which wraps the 32-bit field as RTP intends.
-		{100 * time.Hour, 2335228928},
-	}
+// Fragments of one picture share a source timestamp, and that is the only thing
+// telling a decoder where the access unit ends.
+func TestRebaseKeepsFragmentsTogether(t *testing.T) {
+	var s streamState
 
-	for _, tc := range cases {
-		if got := rtpTicks(tc.elapsed, 90000); got != tc.want {
-			t.Errorf("rtpTicks(%s) = %d, want %d", tc.elapsed, got, tc.want)
-		}
+	first := s.rebase(900000)
+	second := s.rebase(900000)
+	next := s.rebase(900000 + 4500) // the next picture, 20 fps at 90 kHz
+
+	if first != 0 {
+		t.Fatalf("first timestamp = %d, want 0: the session should start at zero", first)
+	}
+	if second != first {
+		t.Fatalf("fragments of one picture got %d and %d, want the same value", first, second)
+	}
+	if next-first != 4500 {
+		t.Fatalf("spacing between pictures = %d, want 4500", next-first)
+	}
+}
+
+// Video and audio are independent streams and must not share a clock.
+func TestDirectionsRebaseIndependently(t *testing.T) {
+	rf := NewRTPForwarder()
+	rf.clients["s1"] = &RTPClient{sessionID: "s1", transportMode: TransportTCP}
+
+	video := &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: 96, Timestamp: 90000}, Payload: []byte{0x41, 0x9a}}
+	rf.ForwardVideoPacket(video)
+
+	audio := &rtp.Packet{Header: rtp.Header{Version: 2, Timestamp: 16000}, Payload: []byte{0x00, 0x01}}
+	rf.ForwardAudioPacket(audio)
+
+	if video.Timestamp != 0 || audio.Timestamp != 0 {
+		t.Fatalf("video %d and audio %d, want each rebased to its own zero", video.Timestamp, audio.Timestamp)
 	}
 }

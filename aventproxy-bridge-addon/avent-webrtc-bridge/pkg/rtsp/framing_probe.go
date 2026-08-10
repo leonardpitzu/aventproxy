@@ -22,7 +22,9 @@ const framingSample = 300
 type framingProbe struct {
 	seen      int
 	continued int
-	units     int
+	byClock   int
+	byPicture int
+	units     accessUnits
 	lastTS    uint64
 	opening   [32]int
 	following [32]int
@@ -37,8 +39,11 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 
 	opensUnit := p.seen == 0 || frame.Timestamp != p.lastTS
 	if opensUnit {
-		p.units++
+		p.byClock++
 		p.lastTS = frame.Timestamp
+	}
+	if p.units.starts(frame.NAL) {
+		p.byPicture++
 	}
 
 	nalType := frame.NAL[0] & 0x1f
@@ -60,9 +65,9 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 
 func (p *framingProbe) summary() string {
 	return fmt.Sprintf(
-		"%d messages, %d declare more than they carry, %d access units by timestamp; "+
-			"opening a unit: %s; continuing one: %s",
-		p.seen, p.continued, p.units, histogram(p.opening), histogram(p.following),
+		"%d messages, %d declare more than they carry, %d access units by picture "+
+			"(%d by the monitor's clock); opening a unit: %s; continuing one: %s",
+		p.seen, p.continued, p.byPicture, p.byClock, histogram(p.opening), histogram(p.following),
 	)
 }
 
