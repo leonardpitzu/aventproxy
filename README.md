@@ -103,28 +103,49 @@ silently:
 
 ### Cloud and local parity
 
-The cloud path is the complete one; the local path is the preferred one, and
-the gap between them is where the remaining work is. Verified means measured on
-a live monitor, not inferred.
+The cloud path does everything; the local path is the preferred one, and the
+difference between them is the remaining work. *Verified* means measured on a
+live monitor, not inferred from the protocol.
 
-| Capability | Cloud | Local | What closing the gap needs |
+**Streaming**
+
+| Feature | Cloud | Local | What closing the gap needs |
 |---|---|---|---|
-| Video, H.264 | yes | **yes**, verified | — |
-| Audio, monitor to viewer | yes, G.711 8 kHz expanded to L16 | **yes**, verified, L16 16 kHz | — the local path is the better of the two |
-| Serving with no internet | no, by definition | **yes** | — |
+| Live video | yes | **yes**, verified | — |
+| Live audio, monitor to viewer | yes, G.711 8 kHz | **yes**, verified, L16 16 kHz | — the local path is the better of the two |
 | Talkback, viewer to monitor | yes | **no** | Which control message carries outbound audio. The six startup control messages are replayed verbatim and only partly decoded; needs a capture of the app talking to a monitor over the LAN |
-| Resolution / quality selection | yes, from the camera's `skill` | **no** | `NewLANBridge` takes no resolution and the startup control messages are replayed as captured, so the monitor sends whatever they asked for |
-| H.265 / HEVC monitors | yes, detected from `skill` | **unknown** | `pkg/lan` has no H.265 handling and the description falls back to H.264 when no `skill` is stored. No HEVC monitor has been tested on either path |
-| Capability discovery | yes, live from `smartlife.m.rtc.config.get` | partial, from the stored `skill` or defaults | The add-on config carries no `skill`, so local streams are described from defaults. Right for this monitor, unverified for others |
+| Serving with no internet | no, by definition | **yes** | — |
 
-Two things sit outside the add-on and are the integration's, listed here only
-so the picture is whole: device state and alerts still come from a cloud poll
-with local push on top, and controls are written locally first with a cloud
-mirror behind them.
+**Sensors**
 
-One gap belongs to neither and is parked: a monitor that has not reached Tuya
-since it booted ignores local signalling entirely, and nothing on the LAN can
-stand in for that. See the paragraphs above.
+| Feature | Cloud | Local | What closing the gap needs |
+|---|---|---|---|
+| Temperature | yes | **on change** | DPS `207` is in the monitor's LAN key set and arrives as a push, but there is no local baseline — see *reading state* below |
+| Motion detected | yes, via the poll | **partial** | DPS `212` pushes on a 3.5 session — measured at 1.3 s against 35 s for the poll — but is absent from the key set, so it exists only from the moment it fires |
+| Sound detected | yes, via the poll | **no** | `250` and `141` have never been seen on the LAN, and `212` carried motion but not sound on the same monitor. Needs a capture of a sound alert on 3.5 |
+| WiFi signal | yes, a separate call every 5 min | **no** | Not a data point at all; it comes from `tuya.m.device.upgrade.rssi.info.query`. No local equivalent is known |
+
+**Controls** — every write is tried on the LAN first with a cloud mirror behind it
+
+| Feature | Cloud | Local | Notes |
+|---|---|---|---|
+| Night light: on/off, brightness, timer | yes | **yes** | `138`, `158`, `240`, `241` |
+| Lullaby: play, track, volume, mode, timer | yes | **yes** | `201`, `203`, `209`, `243`, `244`, `246` |
+| Motion and sound alerts: switches, sensitivity | yes | **yes** | `134`, `139`, `106`, `140` |
+| Privacy mode | yes | **yes** | `237` |
+
+**Reading state** is the one worth attention, because it holds several rows
+above at "on change". `lan.py` never asks the monitor what its state is — the
+comment there says the device does not answer `DP_QUERY` — so the local path
+sees only what the monitor volunteers, and the baseline comes from the cloud
+poll. A later capture contradicts that comment: on a 3.5 session the monitor
+answers `DP_QUERY` with 37 keys, temperature and every control among them. If
+that holds, the poll stops being the source of truth and becomes a backstop,
+which is the single biggest step left towards parity.
+
+One gap belongs to neither path and is parked: a monitor that has not reached
+Tuya since it booted ignores local signalling entirely, and nothing on the LAN
+can stand in for that. See the paragraphs above.
 
 
 ## Supported devices
