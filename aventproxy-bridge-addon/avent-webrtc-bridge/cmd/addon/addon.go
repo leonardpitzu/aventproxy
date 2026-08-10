@@ -69,6 +69,36 @@ func lanUID(cfg BridgeConfig, userInfo *tuya.UserInfoResult) string {
 	return ""
 }
 
+// verifyCloud reports whether the account is usable and who it belongs to.
+// Only the pair of calls proves it: the first that the host answers us, the
+// second that the session is still valid.
+func verifyCloud(client *tuya.MobileSDKClient) (*tuya.UserInfoResult, error) {
+	core.Logger.Info().Msg("Verifying API access...")
+	if _, err := client.Call("smartlife.p.time.get", "1.0", nil); err != nil {
+		return nil, fmt.Errorf("api unreachable: %w", err)
+	}
+
+	userInfo, err := client.GetUserInfo()
+	if err != nil {
+		return nil, fmt.Errorf("session unusable: %w", err)
+	}
+
+	core.Logger.Info().Msgf("User: %s (%s)", userInfo.Nickname, utils.MaskEmail(userInfo.Email))
+	client.UID = userInfo.ID
+	return userInfo, nil
+}
+
+// addonIdentity names the stored session. Online that is the account's email;
+// with no cloud session there is none, so the account uid the integration
+// already passes stands in. It only has to be stable across restarts, because
+// the cameras are stored against it and are unreachable without the match.
+func addonIdentity(cfg BridgeConfig, userInfo *tuya.UserInfoResult) string {
+	if userInfo != nil && userInfo.Email != "" {
+		return userInfo.Email
+	}
+	return lanUID(cfg, nil)
+}
+
 func loadConfig(path string) (BridgeConfig, error) {
 	var cfg BridgeConfig
 	data, err := os.ReadFile(path)
@@ -216,38 +246,33 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 	client.PackageName = cfg.PackageName
 
 	core.Logger.Info().Msgf("Tuya API host: %s", apiHost)
-	core.Logger.Info().Msg("Verifying API access...")
-	if _, err := client.Call("smartlife.p.time.get", "1.0", nil); err != nil {
-		return false, fmt.Errorf("API verification failed: %w", err)
-	}
-	core.Logger.Info().Msg("API access OK")
 
-	userInfo, err := client.GetUserInfo()
-	if err != nil {
-		return false, fmt.Errorf("get user info: %w", err)
+	// The cloud is the fallback, not the prerequisite. A monitor on the local
+	// network needs none of it, so an unreachable account leaves the add-on
+	// serving what it can instead of refusing to start.
+	userInfo, cloudErr := verifyCloud(client)
+	if cloudErr != nil {
+		core.Logger.Warn().Err(cloudErr).Msg("No cloud session; the cloud path is unavailable until the add-on restarts")
 	}
-	core.Logger.Info().Msgf("User: %s (%s)", userInfo.Nickname, utils.MaskEmail(userInfo.Email))
-	client.UID = userInfo.ID
 
-	userKey := "addon_" + strings.ReplaceAll(strings.ReplaceAll(userInfo.Email, "@", "_at_"), ".", "_")
-	user := &storage.UserSession{
-		Email:  userInfo.Email,
-		Region: "addon",
-		SessionData: &tuya.SessionData{
-			LoginResult: &tuya.LoginResult{
-				Uid:      userInfo.ID,
-				Email:    userInfo.Email,
-				Nickname: userInfo.Nickname,
-				Domain:   userInfo.Domain,
-			},
-			ServerHost: apiHost,
-			Region:     "addon",
-			UserEmail:  userInfo.Email,
-		},
-		LastRefresh: time.Now(),
-		UserKey:     userKey,
+	identity := addonIdentity(cfg, userInfo)
+	if identity == "" {
+		return false, fmt.Errorf("no cloud session and no uid in the config: nothing names this account")
 	}
-	if err := storageManager.SaveUser("addon", userInfo.Email, user.SessionData); err != nil {
+	userKey := "addon_" + strings.ReplaceAll(strings.ReplaceAll(identity, "@", "_at_"), ".", "_")
+
+	session := &tuya.SessionData{
+		LoginResult: &tuya.LoginResult{Uid: lanUID(cfg, userInfo)},
+		ServerHost:  apiHost,
+		Region:      "addon",
+	}
+	if userInfo != nil {
+		session.LoginResult.Email = userInfo.Email
+		session.LoginResult.Nickname = userInfo.Nickname
+		session.LoginResult.Domain = userInfo.Domain
+		session.UserEmail = userInfo.Email
+	}
+	if err := storageManager.SaveUser("addon", identity, session); err != nil {
 		core.Logger.Warn().Msgf("Could not save user session: %v", err)
 	}
 
@@ -258,6 +283,7 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 
 	infos := make([]storage.CameraInfo, 0, len(camsWithPath))
 	pathLog := make([]string, 0, len(camsWithPath))
+	localCapable := 0
 	for _, c := range camsWithPath {
 		infos = append(infos, storage.CameraInfo{
 			DeviceID:   c.ID,
@@ -270,14 +296,25 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 			Password:   c.Password, LanIP: c.LanIP, UID: lanUID(cfg, userInfo),
 		})
 		pathLog = append(pathLog, c.Path)
-		core.Logger.Info().Msgf("Camera registered: id=%s name=%s path=%s", c.ID, c.Name, c.Path)
+
+		local := c.LocalKey != "" && c.Password != ""
+		if local {
+			localCapable++
+		}
+		core.Logger.Info().Msgf("Camera registered: id=%s name=%s path=%s local=%t", c.ID, c.Name, c.Path, local)
+	}
+
+	if cloudErr != nil && localCapable == 0 {
+		return false, fmt.Errorf("no cloud session and no camera has a local key and password: nothing can be served")
 	}
 	if err := storageManager.UpdateCamerasForUser(userKey, infos); err != nil {
 		core.Logger.Warn().Msgf("Could not save cameras: %v", err)
 	}
 
 	server := rtsp.NewRTSPServer(port, storageManager)
-	server.MobileClient = client
+	if cloudErr == nil {
+		server.MobileClient = client
+	}
 	server.Talkback = cfg.Talkback
 	if cfg.Talkback {
 		core.Logger.Info().Msg("Two-way audio enabled: streams will ask the camera for talkback")
@@ -285,7 +322,12 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 	if err := server.Start(); err != nil {
 		return false, fmt.Errorf("start RTSP server: %w", err)
 	}
-	core.Logger.Info().Msgf("Serving %d cameras on port %d: %s", len(infos), port, strings.Join(pathLog, " "))
+	paths := "local network first, cloud fallback"
+	if cloudErr != nil {
+		paths = "local network only"
+	}
+	core.Logger.Info().Msgf("Serving %d cameras on port %d, %d of them locally (%s): %s",
+		len(infos), port, localCapable, paths, strings.Join(pathLog, " "))
 
 	watchCtx, stopWatch := context.WithCancel(context.Background())
 	defer stopWatch()

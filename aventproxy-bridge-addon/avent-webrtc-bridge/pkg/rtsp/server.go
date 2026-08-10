@@ -378,13 +378,9 @@ func (s *RTSPServer) getOrCreateStream(camera *storage.CameraInfo, streamResolut
 	if s.MobileClient != nil {
 		stream.webrtcBridge.SetMobileClient(s.MobileClient)
 	}
-	if s.mqttManager != nil {
-		mqttClient, err := s.mqttManager.GetClient(camera.DeviceID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get MQTT client: %w", err)
-		}
-		stream.webrtcBridge.SetMQTTClient(mqttClient)
-	}
+	// The MQTT client is Tuya's broker and belongs to the cloud path alone. It
+	// is fetched when that path is taken, not here: requiring it up front made
+	// an unreachable broker enough to refuse a stream that never needed one.
 
 	stream.attachBridgeErrorHandler()
 
@@ -648,6 +644,18 @@ func (cs *CameraStream) startStream() {
 			cs.replaceBridge()
 		}
 
+		if err := cs.connectCloud(); err != nil {
+			core.Logger.Error().Err(err).Msgf("Cloud path unavailable for %s (attempt %d/2)", cs.camera.DeviceName, attempt)
+			noCloud := cs.server == nil || cs.server.MobileClient == nil
+			cs.mutex.Unlock()
+			if noCloud {
+				// Nothing here changes without a restart, so a retry only
+				// delays the client's failure.
+				break
+			}
+			continue
+		}
+
 		cs.bridgeStarted = true
 		err := cs.webrtcBridge.Start()
 		if err == nil {
@@ -672,8 +680,33 @@ func (cs *CameraStream) stopStream() {
 	cs.stopStreamInternal()
 }
 
-// replaceBridge swaps in a fresh WebRTC bridge, rewired to the server's mobile
-// and MQTT clients, with the error handler attached. Callers must hold cs.mutex.
+// connectCloud gives the WebRTC bridge the session it needs, which is the
+// point at which this stream first requires the internet. Callers must hold
+// cs.mutex.
+func (cs *CameraStream) connectCloud() error {
+	if cs.server == nil || cs.webrtcBridge == nil {
+		return errors.New("no bridge to connect")
+	}
+	if cs.server.MobileClient == nil {
+		return errors.New("the add-on started without a cloud session")
+	}
+	if cs.server.mqttManager == nil {
+		return errors.New("no MQTT manager")
+	}
+
+	mqttClient, err := cs.server.mqttManager.GetClient(cs.camera.DeviceID)
+	if err != nil {
+		return fmt.Errorf("mqtt: %w", err)
+	}
+
+	cs.webrtcBridge.SetMobileClient(cs.server.MobileClient)
+	cs.webrtcBridge.SetMQTTClient(mqttClient)
+	return nil
+}
+
+// replaceBridge swaps in a fresh WebRTC bridge with the error handler
+// attached. It does not reach the cloud; connectCloud does that, once, on the
+// path that needs it. Callers must hold cs.mutex.
 func (cs *CameraStream) replaceBridge() {
 	if cs.webrtcBridge != nil {
 		cs.webrtcBridge.OnError = nil
@@ -688,14 +721,6 @@ func (cs *CameraStream) replaceBridge() {
 
 	if cs.server != nil {
 		cs.webrtcBridge.Talkback = cs.server.Talkback
-		if cs.server.MobileClient != nil {
-			cs.webrtcBridge.SetMobileClient(cs.server.MobileClient)
-		}
-		if cs.server.mqttManager != nil {
-			if mqttClient, err := cs.server.mqttManager.GetClient(cs.camera.DeviceID); err == nil {
-				cs.webrtcBridge.SetMQTTClient(mqttClient)
-			}
-		}
 	}
 
 	cs.attachBridgeErrorHandler()

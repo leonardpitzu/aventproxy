@@ -35,6 +35,14 @@ Multiple monitors on one account are supported: the bridge serves each camera fr
 The bridge tries the local network first and falls back to the cloud whenever any
 step fails, so a camera it cannot reach locally still works exactly as before.
 
+The cloud is the fallback, not the prerequisite: the add-on starts and serves
+without it. An unreachable account is logged and the add-on runs local-only,
+refusing to start only when there is no cloud session *and* no camera has a
+local key and password. Tuya's MQTT broker is contacted when the cloud path is
+actually taken, never before, so an outage there cannot stop a monitor sitting
+on the same switch. What still needs the internet is listed under
+[Protocol](#protocol).
+
 | Stage | Transport |
 |---|---|
 | Address | Taken from Home Assistant, which already resolves it; UDP 6667 discovery is the fallback |
