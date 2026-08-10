@@ -147,7 +147,7 @@ func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 	if frame == nil || len(frame.NAL) < 2 {
 		return
 	}
-	lb.framing.observe(frame, lb.camera.DeviceName)
+	lb.framing.observe(frame, lb.camera.DeviceName, lb.client)
 
 	timestamp := uint32(frame.Timestamp * 9 / 100) // the monitor counts microseconds
 	for _, payload := range lb.split(frame.NAL) {

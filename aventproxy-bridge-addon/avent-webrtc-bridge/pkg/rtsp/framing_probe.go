@@ -42,7 +42,7 @@ type framingProbe struct {
 }
 
 // observe folds one frame into the measurement, reporting once it has enough.
-func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
+func (p *framingProbe) observe(frame *lan.VideoFrame, camera string, client *lan.Client) {
 	if p.reported || frame == nil || len(frame.NAL) == 0 {
 		return
 	}
@@ -92,7 +92,29 @@ func (p *framingProbe) observe(frame *lan.VideoFrame, camera string) {
 	if p.seen >= framingSample {
 		p.reported = true
 		core.Logger.Info().Msgf("LAN video framing for %s: %s", camera, p.summary())
+		if client != nil {
+			core.Logger.Info().Msgf("LAN media channel for %s: %s", camera, readLoopCounts(client.Snapshot()))
+		}
 	}
+}
+
+// readLoopCounts says how much of what arrived was used. A stream that is
+// missing most of its pictures looks very different here from one whose
+// pictures never arrived at all.
+func readLoopCounts(s lan.Stats) string {
+	var other []string
+	for cmd, n := range s.Other {
+		other = append(other, fmt.Sprintf("%#08x=%d", cmd, n))
+	}
+	slices.Sort(other)
+	discarded := "none"
+	if len(other) > 0 {
+		discarded = strings.Join(other, " ")
+	}
+	return fmt.Sprintf(
+		"%d messages read, %d undecryptable, %d malformed, %d video, %d audio; discarded commands: %s",
+		s.Reads, s.OpenErrors, s.Malformed, s.Video, s.Audio, discarded,
+	)
 }
 
 func (p *framingProbe) summary() string {

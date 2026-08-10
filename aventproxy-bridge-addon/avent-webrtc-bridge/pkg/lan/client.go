@@ -45,6 +45,49 @@ type Client struct {
 	closed  bool
 	onFrame func(*VideoFrame)
 	onAudio func(*AudioFrame)
+
+	statsMu sync.Mutex
+	stats   Stats
+}
+
+// Stats counts what the media channel delivered, so a stream that is missing
+// most of its pictures can be told apart from one that never received them.
+type Stats struct {
+	Reads      int
+	OpenErrors int
+	Malformed  int
+	Video      int
+	Audio      int
+	// Other counts commands the dispatcher has no case for. Anything here is
+	// media this bridge is discarding.
+	Other map[uint32]int
+}
+
+func (c *Client) count(field *int) {
+	c.statsMu.Lock()
+	*field++
+	c.statsMu.Unlock()
+}
+
+func (c *Client) countOther(cmd uint32) {
+	c.statsMu.Lock()
+	if c.stats.Other == nil {
+		c.stats.Other = map[uint32]int{}
+	}
+	c.stats.Other[cmd]++
+	c.statsMu.Unlock()
+}
+
+// Snapshot returns the counts so far.
+func (c *Client) Snapshot() Stats {
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+	out := c.stats
+	out.Other = make(map[uint32]int, len(c.stats.Other))
+	for cmd, n := range c.stats.Other {
+		out.Other[cmd] = n
+	}
+	return out
 }
 
 // NewClient prepares a client; nothing touches the network until Start.
@@ -237,8 +280,10 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		if err != nil {
 			return
 		}
+		c.count(&c.stats.Reads)
 		msg, err := open(aesKey, buf[:n])
 		if err != nil {
+			c.count(&c.stats.OpenErrors)
 			continue
 		}
 		if c.OnRawMedia != nil {
@@ -246,18 +291,23 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		}
 		cmd, ts, declared, payload, ok := mediaPayload(msg)
 		if !ok {
+			c.count(&c.stats.Malformed)
 			continue
 		}
 		switch cmd {
 		case CmdMediaVideo:
+			c.count(&c.stats.Video)
 			frame := video.add(msg, ts, declared, payload)
 			if frame != nil && c.onFrame != nil {
 				c.onFrame(frame)
 			}
 		case CmdMediaAudio:
+			c.count(&c.stats.Audio)
 			if c.onAudio != nil {
 				c.onAudio(parseAudio(msg, ts, payload))
 			}
+		default:
+			c.countOther(cmd)
 		}
 	}
 }
