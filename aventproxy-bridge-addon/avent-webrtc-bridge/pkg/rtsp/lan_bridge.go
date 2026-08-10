@@ -61,8 +61,7 @@ type LANBridge struct {
 	seq       atomic.Uint32
 	audioSSRC uint32
 	audioSeq  atomic.Uint32
-	audioPT   uint8
-	audio     g711Encoder
+	audioTS   atomic.Uint32
 	audioWarn sync.Once
 	framing   framingProbe
 	payloader codecs.H264Payloader
@@ -105,8 +104,6 @@ func (lb *LANBridge) Start() error {
 	// continuation of the previous stream to RTSP clients.
 	lb.ssrc = randomSSRC()
 	lb.audioSSRC = randomSSRC()
-	lb.audioPT, _ = audioRTPProfile(cameraSkill(lb.camera))
-	lb.audio.alaw = lb.audioPT == 8
 
 	lb.ctx, lb.cancel = context.WithCancel(context.Background())
 	lb.client = lan.NewClient(
@@ -187,29 +184,28 @@ func (lb *LANBridge) split(payload []byte) [][]byte {
 
 // onAudio hands one of the monitor's audio units to the shared forwarder.
 //
-// The monitor sends 16 kHz linear PCM but the description promises G.711 at
-// 8 kHz, so the unit is resampled and companded on the way through. The
-// forwarder rebases the timestamp onto its own 8 kHz clock.
+// The samples are already the 16 kHz PCM the description announces, so they
+// only need putting into network byte order.
 func (lb *LANBridge) onAudio(frame *lan.AudioFrame) {
 	if frame == nil || len(frame.Samples) == 0 {
 		return
 	}
-	if frame.SampleRate != lanAudioRate || frame.Channels != 1 {
+	if frame.SampleRate != audioRate || frame.Channels != 1 {
 		lb.audioWarn.Do(func() {
 			core.Logger.Warn().Msgf(
-				"Ignoring LAN audio from %s: %d Hz, %d channel(s), codec %d is not the 16 kHz mono this converts",
+				"Ignoring LAN audio from %s: %d Hz, %d channel(s), codec %d is not the 16 kHz mono the description announces",
 				lb.camera.DeviceName, frame.SampleRate, frame.Channels, frame.Codec)
 		})
 		return
 	}
-	payload := lb.audio.encode(frame.Samples)
+	payload := pcmLEtoBE(frame.Samples)
 	if len(payload) == 0 {
 		return
 	}
 	lb.forwarder.ForwardAudioPacket(&rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
-			PayloadType:    lb.audioPT,
+			PayloadType:    audioPayloadType,
 			SequenceNumber: uint16(lb.audioSeq.Add(1)),
 			SSRC:           lb.audioSSRC,
 		},

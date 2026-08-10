@@ -555,12 +555,15 @@ func (s *RTSPServer) generateSDP(camera *storage.CameraInfo, baseURL string) str
 	videoSdp += fmt.Sprintf("a=control:%s/video\r\n", baseURL)
 	videoSdp += "a=recvonly\r\n"
 
-	// Audio media description based on skill
-	audioPT, audioRtpmap := audioRTPProfile(skill)
-	audioSdp += fmt.Sprintf("m=audio 0 RTP/AVP %d\r\n", audioPT)
-	audioSdp += fmt.Sprintf("a=rtpmap:%d %s\r\n", audioPT, audioRtpmap)
+	// Audio arrives as 16 kHz PCM on the local path and as G.711 from the
+	// cloud, and the cloud one is converted, so the description is L16 either
+	// way. The backchannel is not: it goes to the camera, which takes G.711.
+	audioSdp += fmt.Sprintf("m=audio 0 RTP/AVP %d\r\n", audioPayloadType)
+	audioSdp += fmt.Sprintf("a=rtpmap:%d %s\r\n", audioPayloadType, audioRtpmap)
 
-	backchannelAudio := audioSdp
+	backPT, backRtpmap := audioRTPProfile(skill)
+	backchannelAudio := fmt.Sprintf("m=audio 0 RTP/AVP %d\r\n", backPT)
+	backchannelAudio += fmt.Sprintf("a=rtpmap:%d %s\r\n", backPT, backRtpmap)
 	backchannelAudio += fmt.Sprintf("a=control:%s/backchannel\r\n", baseURL)
 	backchannelAudio += "a=sendonly\r\n"
 

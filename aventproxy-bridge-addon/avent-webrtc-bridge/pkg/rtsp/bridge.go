@@ -604,6 +604,12 @@ func (wb *WebRTCBridge) handleVideoTrack(track *pion.TrackRemote) {
 func (wb *WebRTCBridge) handleAudioTrack(track *pion.TrackRemote) {
 	core.Logger.Trace().Msgf("Starting audio track handler")
 
+	// The description announces L16, which the local path produces natively.
+	// The cloud sends G.711, so it is expanded here rather than described
+	// differently: which transport a stream takes is not known when the
+	// description is written.
+	decoder := g711Decoder{alaw: codecIsALaw(track.Codec().MimeType)}
+
 	for {
 		select {
 		case <-wb.ctx.Done():
@@ -619,6 +625,8 @@ func (wb *WebRTCBridge) handleAudioTrack(track *pion.TrackRemote) {
 				continue
 			}
 
+			packet.Payload = decoder.decode(packet.Payload)
+			packet.PayloadType = audioPayloadType
 			wb.rtpForwarder.ForwardAudioPacket(packet)
 		}
 	}

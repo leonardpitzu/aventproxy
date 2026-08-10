@@ -113,7 +113,7 @@ func NewRTPForwarder() *RTPForwarder {
 	return &RTPForwarder{
 		clients: make(map[string]*RTPClient),
 		video:   streamState{clockRate: 90000},
-		audio:   streamState{clockRate: 8000},
+		audio:   streamState{clockRate: audioRate},
 	}
 }
 

@@ -42,8 +42,8 @@ step fails, so a camera it cannot reach locally still works exactly as before.
 | Signalling | protocol-302 offer/answer on the same session |
 | Connectivity | ICE host candidates, checked directly rather than through a full ICE agent |
 | Media | KCP over UDP, AES-128-CBC payloads, each datagram carrying an HMAC-SHA1 trailer |
-| Video | H.264, repacketised into RTP for RTSP |
-| Audio | 16 kHz linear PCM, resampled and companded to the G.711 the description advertises |
+| Video | H.264 RTP payloads, rejoined where one was split across messages |
+| Audio | 16 kHz linear PCM, carried as RTP L16 |
 
 Once it is up, nothing in that chain touches the internet. The three credentials
 it needs are fetched once at setup and cached in the config entry: `local_key`
@@ -433,8 +433,8 @@ is shared.
 | Connectivity | ICE, host candidates only. The monitor is always controlling and its binding success responses carry no MESSAGE-INTEGRITY |
 | Media | KCP over the same socket, two conversations: control, and one for the media whose id varies per session. Payloads are AES-128-CBC, each datagram carrying an HMAC-SHA1 trailer keyed by the SDP `aes-key` |
 | Login | `md5(password + "||" + localKey)`, in a 104-byte frame naming the user `admin` |
-| Video | H.264 arriving as RTP payloads: parameter sets whole, slices already fragmented as FU-A |
-| Audio | Command `0x00010005`: signed 16-bit little-endian PCM, 16 kHz mono, 640 bytes (20 ms) per unit. Not a compressed codec, and not what the RTSP description promises, so the bridge converts it |
+| Video | H.264 arriving as RTP payloads: parameter sets whole, slices already fragmented as FU-A. A payload is not a message, though: the sub-header declares its length and about 40% of them are finished by the message that follows, so they are rejoined before forwarding |
+| Audio | Command `0x00010005`: signed 16-bit little-endian PCM, 16 kHz mono, 640 bytes (20 ms) per unit. Forwarded as RTP L16, which is the same samples in network byte order |
 
 ### Cloud
 
@@ -452,17 +452,20 @@ server certificate against a trust store in firmware.
 
 The RTSP description is generated when a client sends DESCRIBE, before it is
 known whether the stream will end up local or on the cloud, and it has to stay
-valid either way. The cloud gives G.711 at 8 kHz, taken from the camera's own
-`skill`; the LAN gives 16 kHz linear PCM. Rather than describe the session
-differently per path, or renegotiate mid-stream, the LAN path resamples to
-8 kHz and compands to the same G.711 the description already promised.
+valid either way. It announces `L16/16000`, which is what the monitor's own
+microphone produces and what the local path carries untouched. The cloud gives
+G.711 at 8 kHz instead, so that path expands it to L16 and pairs each sample
+with an interpolated one; nothing is gained there, but the description stays
+true whichever transport a stream took.
 
-That costs the 4-8 kHz band on a transport that could have carried it. It buys
-a single code path downstream, a description that cannot go stale when a local
-session fails over to the cloud mid-session, and payload types every RTSP client
-understands. Advertising `L16/16000` instead was the alternative; it would have
-made the fallback path transcode in the other direction for no quality gain,
-and narrows the set of clients that can play the stream.
+Announcing G.711 and companding the local path down to it was the earlier
+choice, on the grounds that every RTSP client understands it. go2rtc, which is
+what Home Assistant puts in front of this, makes that unnecessary: it packs PCM
+into FLAC for MSE and HLS, and converts it to PCMA itself for WebRTC. The lossy
+step cost half the bandwidth and bought nothing.
+
+The backchannel is described separately and stays on G.711, because that is
+what the camera accepts.
 
 ### Credentials
 
