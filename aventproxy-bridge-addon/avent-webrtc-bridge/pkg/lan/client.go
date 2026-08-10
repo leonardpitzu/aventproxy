@@ -31,17 +31,19 @@ type Client struct {
 	session *Session
 	sock    *net.UDPConn
 	router  *packetRouter
-	// stream carries control messages, media the video.
+	// stream carries control messages, media the video and audio.
 	stream *kcp.UDPSession
 	media  []*kcp.UDPSession
 
 	mu      sync.Mutex
 	closed  bool
 	onFrame func(*VideoFrame)
+	onAudio func(*AudioFrame)
 }
 
 // NewClient prepares a client; nothing touches the network until Start.
-func NewClient(deviceID, localKey, password, uid, ip string, onFrame func(*VideoFrame)) *Client {
+// Either callback may be nil, in which case that stream is discarded.
+func NewClient(deviceID, localKey, password, uid, ip string, onFrame func(*VideoFrame), onAudio func(*AudioFrame)) *Client {
 	return &Client{
 		DeviceID: deviceID,
 		LocalKey: localKey,
@@ -49,6 +51,7 @@ func NewClient(deviceID, localKey, password, uid, ip string, onFrame func(*Video
 		UID:      uid,
 		IP:       ip,
 		onFrame:  onFrame,
+		onAudio:  onAudio,
 	}
 }
 
@@ -229,8 +232,19 @@ func (c *Client) readLoop(ctx context.Context, stream *kcp.UDPSession, aesKey []
 		if err != nil {
 			continue
 		}
-		if frame, ok := parseMedia(msg); ok && c.onFrame != nil {
-			c.onFrame(frame)
+		cmd, ts, payload, ok := mediaPayload(msg)
+		if !ok {
+			continue
+		}
+		switch cmd {
+		case CmdMediaVideo:
+			if c.onFrame != nil {
+				c.onFrame(parseVideo(msg, ts, payload))
+			}
+		case CmdMediaAudio:
+			if c.onAudio != nil {
+				c.onAudio(parseAudio(msg, ts, payload))
+			}
 		}
 	}
 }

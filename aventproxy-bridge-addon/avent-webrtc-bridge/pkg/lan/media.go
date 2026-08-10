@@ -20,6 +20,7 @@ const (
 	mediaMagic = 0x12345678
 
 	CmdMediaVideo = 0x00010003
+	CmdMediaAudio = 0x00010005
 
 	macLen         = sha1.Size // trailing HMAC on every datagram
 	mediaHeaderLen = 32        // command + stream description
@@ -27,6 +28,8 @@ const (
 	// subHeaderOverhead is what the length field counts besides the payload:
 	// the 8-byte timestamp and the 4-byte flags.
 	subHeaderOverhead = 12
+	// descOffset is where the 8 stream-description bytes start in the header.
+	descOffset = 24
 )
 
 // startupMessages are the control messages the app sends straight after the
@@ -116,33 +119,74 @@ type VideoFrame struct {
 	NAL []byte
 }
 
-// parseMedia turns a decrypted media message into a frame.
-func parseMedia(msg []byte) (*VideoFrame, bool) {
-	if len(msg) < mediaHeaderLen+subHeaderLen {
-		return nil, false
+// AudioFrame is one decoded unit of the monitor's audio stream.
+type AudioFrame struct {
+	Timestamp uint64
+	Codec     int
+	// SampleRate is 0 when the header names an index this does not know.
+	SampleRate int
+	Channels   int
+	// Samples is signed 16-bit little-endian linear PCM, not a compressed
+	// codec: silence arrives as zero bytes, which no G.711 variant produces.
+	Samples []byte
+}
+
+// sampleRates maps the description's rate index to Hz. Index 3 is what this
+// hardware sends and 16 kHz was confirmed by measuring the stream; the rest
+// follow the same enum order and are untested here.
+var sampleRates = [...]int{8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000}
+
+func sampleRate(index uint16) int {
+	if int(index) < len(sampleRates) {
+		return sampleRates[index]
 	}
-	if binary.LittleEndian.Uint32(msg[:4]) != CmdMediaVideo {
-		return nil, false
+	return 0
+}
+
+// mediaPayload splits a decrypted media message into its command, timestamp
+// and data. Both streams share this framing; only the description bytes at
+// descOffset differ.
+func mediaPayload(msg []byte) (cmd uint32, ts uint64, payload []byte, ok bool) {
+	if len(msg) < mediaHeaderLen+subHeaderLen {
+		return 0, 0, nil, false
 	}
 	sub := msg[mediaHeaderLen:]
 	length := int(binary.LittleEndian.Uint32(sub[:4]))
 	if length < subHeaderOverhead {
-		return nil, false
+		return 0, 0, nil, false
 	}
-	payload := sub[subHeaderLen:]
+	payload = sub[subHeaderLen:]
 	if n := length - subHeaderOverhead; n >= 0 && n <= len(payload) {
 		payload = payload[:n]
 	}
 	if len(payload) == 0 {
-		return nil, false
+		return 0, 0, nil, false
 	}
+	return binary.LittleEndian.Uint32(msg[:4]), binary.LittleEndian.Uint64(sub[4:12]), payload, true
+}
+
+// parseVideo turns a decrypted video message into a frame.
+func parseVideo(msg []byte, ts uint64, payload []byte) *VideoFrame {
 	return &VideoFrame{
 		Width:     int(binary.LittleEndian.Uint16(msg[26:28])),
 		Height:    int(binary.LittleEndian.Uint16(msg[28:30])),
 		FPS:       int(msg[30]),
-		Timestamp: binary.LittleEndian.Uint64(sub[4:12]),
+		Timestamp: ts,
 		NAL:       payload,
-	}, true
+	}
+}
+
+// parseAudio turns a decrypted audio message into a frame. The description
+// mirrors the video one: codec first, then the rate index and channel count in
+// the fields video uses for width and fps.
+func parseAudio(msg []byte, ts uint64, payload []byte) *AudioFrame {
+	return &AudioFrame{
+		Timestamp:  ts,
+		Codec:      int(msg[descOffset]),
+		SampleRate: sampleRate(binary.LittleEndian.Uint16(msg[descOffset+2 : descOffset+4])),
+		Channels:   int(msg[descOffset+6]),
+		Samples:    payload,
+	}
 }
 
 // startupSequence returns the login followed by the stream-start messages.

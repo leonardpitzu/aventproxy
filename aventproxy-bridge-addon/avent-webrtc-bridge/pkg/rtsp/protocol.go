@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -514,12 +513,7 @@ func (s *RTSPServer) generateSDP(camera *storage.CameraInfo, baseURL string) str
 	sdp += "a=control:*\r\n"
 	sdp += "a=range:npt=0-\r\n"
 
-	var skill *tuya.Skill
-	if camera.Skill != "" {
-		if err := json.Unmarshal([]byte(camera.Skill), &skill); err != nil {
-			core.Logger.Warn().Err(err).Msg("Could not parse skill, using defaults")
-		}
-	}
+	skill := cameraSkill(camera)
 
 	audioSdp := ""
 	videoSdp := ""
@@ -562,29 +556,9 @@ func (s *RTSPServer) generateSDP(camera *storage.CameraInfo, baseURL string) str
 	videoSdp += "a=recvonly\r\n"
 
 	// Audio media description based on skill
-	if skill != nil && len(skill.Audios) > 0 {
-		audioInfo := skill.Audios[0] // Nehme ersten audio stream
-
-		switch audioInfo.CodecType {
-		// case 101: // PCML
-		// 	audioSdp += "m=audio 0 RTP/AVP 97\r\n"
-		// 	audioSdp += "a=rtpmap:97 L16/8000\r\n"
-		case 101, 105: // PCML and PCMU
-			audioSdp += "m=audio 0 RTP/AVP 0\r\n"
-			audioSdp += "a=rtpmap:0 PCMU/8000\r\n"
-		case 106: // PCMA
-			audioSdp += "m=audio 0 RTP/AVP 8\r\n"
-			audioSdp += "a=rtpmap:8 PCMA/8000\r\n"
-		default:
-			// Fallback
-			audioSdp += "m=audio 0 RTP/AVP 0\r\n"
-			audioSdp += "a=rtpmap:0 PCMU/8000\r\n"
-		}
-	} else {
-		// Fallback in case no audio stream is found
-		audioSdp += "m=audio 0 RTP/AVP 0\r\n"
-		audioSdp += "a=rtpmap:0 PCMU/8000\r\n"
-	}
+	audioPT, audioRtpmap := audioRTPProfile(skill)
+	audioSdp += fmt.Sprintf("m=audio 0 RTP/AVP %d\r\n", audioPT)
+	audioSdp += fmt.Sprintf("a=rtpmap:%d %s\r\n", audioPT, audioRtpmap)
 
 	backchannelAudio := audioSdp
 	backchannelAudio += fmt.Sprintf("a=control:%s/backchannel\r\n", baseURL)

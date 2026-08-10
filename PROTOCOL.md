@@ -1064,6 +1064,70 @@ points at Tuya's push-notification service. That has not been reverse engineered
 - **The 904 frames have a concrete mechanism.** The camera's `STATUS` pushes arrive as `{"protocol":4,"t":...,"data":{"dps":{...}}}` behind a **15-byte 3.5 version header**. A decoder that only knows 3.1 through 3.4 falls through to hex on them, and tinytuya constructed with `version=3.3` reports them as unparseable, which is exactly the `Unexpected Payload from Device` seen on #62.
 - **Local control is the user-facing prize, not local streaming.** With the camera's WAN cut, streaming kept working while control did not: the app reported the camera offline and switch changes never applied. A correctly negotiated local session should let `set_dps` keep working with no internet, which is a visible win independent of the signaling work.
 
+#### The media channel: video and audio
+
+After ICE the monitor opens KCP conversations and every datagram is a KCP
+segment followed by `HMAC-SHA1(aes-key, segment)`; the payload is
+`IV(16) || AES-128-CBC(aes-key, IV)`, PKCS#7 padded. Inside that, a media
+message is:
+
+```
+header      32 B   command(4) ... stream description at offset 24
+sub-header  16 B   length(4) timestamp(8) flags(4)      length = 12 + data
+data                                                     from offset 16 of the sub-header
+```
+
+Both streams share this framing, so only the command and the description
+differ:
+
+| Command | Stream | Description at offset 24 | Payload |
+|---------|--------|--------------------------|---------|
+| `0x00010003` | Video | codec, width, height, fps | H.264 as RTP payloads: parameter sets whole, slices already FU-A fragmented |
+| `0x00010005` | Audio | codec, rate index, channels | signed 16-bit **little-endian linear PCM**, 640 bytes per unit |
+
+The login sequence has always asked for both: the sixth startup control message
+is `78563412 05000100 ...`, command `0x00010005`. An implementation that decodes
+only `0x00010003` therefore receives the audio, decrypts it, and drops it.
+
+**The audio is not a compressed codec, which is the part worth stating plainly.**
+Measured over a 12 s capture of a quiet room:
+
+- 388,480 bytes in 12 s, which is **16,187 Hz** read as 16-bit mono, and the
+  description's rate index of 3 says 16 kHz independently.
+- 640 bytes per unit at ~51 units/s is 320 samples, i.e. **20 ms**.
+- The odd bytes take only two values, `0x00` and `0xFF` — the signature of
+  little-endian 16-bit PCM at low amplitude. Read as big-endian the same bytes
+  give ±10,000 noise, so the byte order is settled.
+- Silence is `0x00`. In u-law silence is `0xFF` and `0x00` is full-scale
+  negative, so G.711 is excluded rather than merely unlikely.
+
+Sample values ran -42..+39 with an RMS of 4.6: a real, very quiet room, not a
+muted or absent microphone.
+
+#### Decision: convert on the LAN path rather than describe it differently
+
+The RTSP description is built at DESCRIBE, before it is known which transport a
+stream will use, and it must stay valid if a local session fails over to the
+cloud. The cloud path yields G.711 at 8 kHz from the camera's `skill`; the LAN
+path yields 16 kHz PCM. Three options existed:
+
+| | Approach | Why not |
+|---|---|---|
+| Chosen | LAN resamples 16 kHz PCM to 8 kHz and compands to the advertised G.711 | Loses the 4-8 kHz band on a transport that could carry it |
+| | Advertise `L16/16000`, transcode the cloud path up to it | Fallback transcodes for no quality gain, and L16 narrows client support |
+| | Describe the session per transport | The description is issued before the transport is known, and a mid-session fallback would invalidate it |
+
+The resampler is a 15-tap Hamming-windowed sinc at a 3.4 kHz cutoff, in Q15:
+-3.3 dB at 3 kHz, -12.6 dB at 4 kHz, below -35 dB above 5 kHz, so the band that
+would fold back into the 8 kHz output is buried rather than aliased. Its window
+persists across units, so unit boundaries do not click.
+
+Both companders are the truncating ITU-T G.711 form. Checked against ffmpeg's
+tables over all 65,536 sample values: u-law agrees on 99.2% of codewords and
+A-law on 98.5%, the rest differing by one codeword because ffmpeg rounds to
+nearest where ITU truncates. Maximum reconstruction error is the same or better
+than ffmpeg's (u-law 644 vs 644, A-law 512 vs 515).
+
 ### 17. Completed Architecture
 
 With the streaming path mapped, the end-to-end local pipeline is:
@@ -1078,6 +1142,7 @@ signalling transport
         |
         v
 LAN: ICE host pair, then KCP with AES-CBC     cloud: WebRTC DTLS-SRTP
+   video H.264, audio 16 kHz PCM -> G.711     video H.264, audio G.711
         |
         v
 RTSP re-publish  ->  Home Assistant

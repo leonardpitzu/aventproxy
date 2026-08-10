@@ -43,6 +43,7 @@ step fails, so a camera it cannot reach locally still works exactly as before.
 | Connectivity | ICE host candidates, checked directly rather than through a full ICE agent |
 | Media | KCP over UDP, AES-128-CBC payloads, each datagram carrying an HMAC-SHA1 trailer |
 | Video | H.264, repacketised into RTP for RTSP |
+| Audio | 16 kHz linear PCM, resampled and companded to the G.711 the description advertises |
 
 Once it is up, nothing in that chain touches the internet. The three credentials
 it needs are fetched once at setup and cached in the config entry: `local_key`
@@ -430,9 +431,10 @@ is shared.
 | Session key | Nonce exchange under the `localKey` (commands 3, 4, 5), then AES-GCM over the XOR of both nonces, keeping 16 bytes of ciphertext |
 | Signalling | Command 32 carries a JSON offer/answer. Its GCM iv is the trace id as ASCII, not random bytes, and a random one is accepted and then ignored |
 | Connectivity | ICE, host candidates only. The monitor is always controlling and its binding success responses carry no MESSAGE-INTEGRITY |
-| Media | KCP over the same socket, two conversations: control, and one for video whose id varies per session. Payloads are AES-128-CBC, each datagram carrying an HMAC-SHA1 trailer keyed by the SDP `aes-key` |
+| Media | KCP over the same socket, two conversations: control, and one for the media whose id varies per session. Payloads are AES-128-CBC, each datagram carrying an HMAC-SHA1 trailer keyed by the SDP `aes-key` |
 | Login | `md5(password + "||" + localKey)`, in a 104-byte frame naming the user `admin` |
 | Video | H.264 arriving as RTP payloads: parameter sets whole, slices already fragmented as FU-A |
+| Audio | Command `0x00010005`: signed 16-bit little-endian PCM, 16 kHz mono, 640 bytes (20 ms) per unit. Not a compressed codec, and not what the RTSP description promises, so the bridge converts it |
 
 ### Cloud
 
@@ -441,11 +443,26 @@ from the app. Password plus emailed MFA yields a `sid`;
 `smartlife.m.rtc.config.get` yields the ICE servers, the P2P password and the
 MQTT credentials; signalling then runs over Tuya MQTT and the media is ordinary
 WebRTC with DTLS-SRTP.
-
 The monitor's own cloud session is separate from this and cannot be stood in
 for. It resolves `h2.iot-dns.com` to find its regional endpoints, speaks TLS
 1.2 to `m2.tuyaeu.com` on 8883 offering one cipher suite, and validates the
 server certificate against a trust store in firmware.
+
+### One description, two transports
+
+The RTSP description is generated when a client sends DESCRIBE, before it is
+known whether the stream will end up local or on the cloud, and it has to stay
+valid either way. The cloud gives G.711 at 8 kHz, taken from the camera's own
+`skill`; the LAN gives 16 kHz linear PCM. Rather than describe the session
+differently per path, or renegotiate mid-stream, the LAN path resamples to
+8 kHz and compands to the same G.711 the description already promised.
+
+That costs the 4-8 kHz band on a transport that could have carried it. It buys
+a single code path downstream, a description that cannot go stale when a local
+session fails over to the cloud mid-session, and payload types every RTSP client
+understands. Advertising `L16/16000` instead was the alternative; it would have
+made the fallback path transcode in the other direction for no quality gain,
+and narrows the set of clients that can play the stream.
 
 ### Credentials
 

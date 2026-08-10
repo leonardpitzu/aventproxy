@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"avent-webrtc-bridge/pkg/core"
 	"avent-webrtc-bridge/pkg/lan"
 	"avent-webrtc-bridge/pkg/storage"
+	"avent-webrtc-bridge/pkg/tuya"
 
 	"github.com/pion/rtp"
 )
@@ -19,20 +21,50 @@ import (
 // h264ClockRate is the RTP timestamp rate H.264 always uses.
 const h264ClockRate = 90000
 
+// cameraSkill parses a camera's stored skill; nil means "use the defaults".
+func cameraSkill(camera *storage.CameraInfo) *tuya.Skill {
+	if camera == nil || camera.Skill == "" {
+		return nil
+	}
+	var skill *tuya.Skill
+	if err := json.Unmarshal([]byte(camera.Skill), &skill); err != nil {
+		core.Logger.Warn().Err(err).Msg("Could not parse skill, using defaults")
+		return nil
+	}
+	return skill
+}
+
+// audioRTPProfile maps the monitor's advertised audio codec to the static RTP
+// payload type and rtpmap name. Tuya's ids: 101 and 105 are u-law, 106 A-law.
+// The LAN path has to answer this the same way the RTSP description does, or a
+// client decodes the samples with the wrong companding.
+func audioRTPProfile(skill *tuya.Skill) (uint8, string) {
+	if skill != nil && len(skill.Audios) > 0 && skill.Audios[0].CodecType == 106 {
+		return 8, "PCMA/8000"
+	}
+	return 0, "PCMU/8000"
+}
+
 // LANBridge streams a monitor over the local network instead of the cloud.
 //
 // It deliberately shares the caller's RTPForwarder: everything downstream —
 // RTSP clients, SPS/PPS caching for late joiners, TCP interleaving — is
-// transport-agnostic, so the LAN path only has to end at ForwardVideoPacket.
+// transport-agnostic, so the LAN path only has to end at ForwardVideoPacket
+// and ForwardAudioPacket.
 type LANBridge struct {
 	camera    *storage.CameraInfo
 	forwarder *RTPForwarder
 
-	client *lan.Client
-	ssrc   uint32
-	seq    atomic.Uint32
-	ctx    context.Context
-	cancel context.CancelFunc
+	client    *lan.Client
+	ssrc      uint32
+	seq       atomic.Uint32
+	audioSSRC uint32
+	audioSeq  atomic.Uint32
+	audioPT   uint8
+	audio     g711Encoder
+	audioWarn sync.Once
+	ctx       context.Context
+	cancel    context.CancelFunc
 
 	mu        sync.Mutex
 	connected bool
@@ -69,6 +101,9 @@ func (lb *LANBridge) Start() error {
 	// A fresh SSRC per session keeps a reconnect from looking like a
 	// continuation of the previous stream to RTSP clients.
 	lb.ssrc = randomSSRC()
+	lb.audioSSRC = randomSSRC()
+	lb.audioPT, _ = audioRTPProfile(cameraSkill(lb.camera))
+	lb.audio.alaw = lb.audioPT == 8
 
 	lb.ctx, lb.cancel = context.WithCancel(context.Background())
 	lb.client = lan.NewClient(
@@ -78,6 +113,7 @@ func (lb *LANBridge) Start() error {
 		lb.camera.UID,
 		lb.camera.LanIP,
 		lb.onFrame,
+		lb.onAudio,
 	)
 
 	if err := lb.client.Start(lb.ctx); err != nil {
@@ -117,6 +153,38 @@ func (lb *LANBridge) onFrame(frame *lan.VideoFrame) {
 			Marker:    endsAccessUnit(frame.NAL),
 		},
 		Payload: frame.NAL,
+	})
+}
+
+// onAudio hands one of the monitor's audio units to the shared forwarder.
+//
+// The monitor sends 16 kHz linear PCM but the description promises G.711 at
+// 8 kHz, so the unit is resampled and companded on the way through. The
+// forwarder rebases the timestamp onto its own 8 kHz clock.
+func (lb *LANBridge) onAudio(frame *lan.AudioFrame) {
+	if frame == nil || len(frame.Samples) == 0 {
+		return
+	}
+	if frame.SampleRate != lanAudioRate || frame.Channels != 1 {
+		lb.audioWarn.Do(func() {
+			core.Logger.Warn().Msgf(
+				"Ignoring LAN audio from %s: %d Hz, %d channel(s), codec %d is not the 16 kHz mono this converts",
+				lb.camera.DeviceName, frame.SampleRate, frame.Channels, frame.Codec)
+		})
+		return
+	}
+	payload := lb.audio.encode(frame.Samples)
+	if len(payload) == 0 {
+		return
+	}
+	lb.forwarder.ForwardAudioPacket(&rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    lb.audioPT,
+			SequenceNumber: uint16(lb.audioSeq.Add(1)),
+			SSRC:           lb.audioSSRC,
+		},
+		Payload: payload,
 	})
 }
 

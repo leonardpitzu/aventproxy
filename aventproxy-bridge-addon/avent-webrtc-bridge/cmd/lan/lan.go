@@ -4,6 +4,7 @@ package lan
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,13 +23,14 @@ func SetStorageManager(sm *storage.StorageManager) {
 // real monitor, so this exists to do that without Home Assistant in the way.
 func NewLanCmd() *cobra.Command {
 	var (
-		deviceID string
-		ip       string
-		localKey string
-		password string
-		uid      string
-		seconds  int
-		verbose  bool
+		deviceID  string
+		ip        string
+		localKey  string
+		password  string
+		uid       string
+		seconds   int
+		verbose   bool
+		dumpAudio string
 	)
 
 	cmd := &cobra.Command{
@@ -57,8 +59,20 @@ Example:
 				}
 			}
 
+			var audioSink *os.File
+			if dumpAudio != "" {
+				f, err := os.Create(dumpAudio)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				audioSink = f
+			}
+
 			var frames, bytes int
 			var width, height, fps int
+			var audioFrames, audioBytes int
+			var audioRate, audioChannels, audioCodec int
 			client := lan.NewClient(deviceID, localKey, password, uid, ip, func(f *lan.VideoFrame) {
 				frames++
 				bytes += len(f.NAL)
@@ -66,6 +80,13 @@ Example:
 				// description; the rest hold whatever was in those bytes.
 				if width == 0 && f.Width >= 160 && f.Height >= 120 && f.FPS > 0 {
 					width, height, fps = f.Width, f.Height, f.FPS
+				}
+			}, func(f *lan.AudioFrame) {
+				audioFrames++
+				audioBytes += len(f.Samples)
+				audioRate, audioChannels, audioCodec = f.SampleRate, f.Channels, f.Codec
+				if audioSink != nil {
+					_, _ = audioSink.Write(f.Samples)
 				}
 			})
 
@@ -87,6 +108,12 @@ Example:
 			}
 			fmt.Printf("\n%dx%d at %dfps: %d frames, %d bytes in %ds\n",
 				width, height, fps, frames, bytes, seconds)
+			if audioFrames == 0 {
+				fmt.Println("audio: none")
+			} else {
+				fmt.Printf("audio: codec %d, %d Hz, %d channel(s): %d units, %d bytes, %d per unit\n",
+					audioCodec, audioRate, audioChannels, audioFrames, audioBytes, audioBytes/audioFrames)
+			}
 			return nil
 		},
 	}
@@ -98,5 +125,6 @@ Example:
 	cmd.Flags().StringVar(&uid, "uid", "", "account uid, used as the offer's sender")
 	cmd.Flags().IntVar(&seconds, "seconds", 10, "how long to collect video")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "trace the protocol")
+	cmd.Flags().StringVar(&dumpAudio, "dump-audio", "", "write the raw audio units to this file")
 	return cmd
 }
