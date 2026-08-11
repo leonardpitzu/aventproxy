@@ -12,12 +12,12 @@ from philips_avent.events import (
     EVENT_MAX_AGE_SECONDS,
     KNOWN_COMMANDS,
     LULLABY_SETTLE_SECONDS,
+    cloud_poll_needed,
     decode_event_payload,
     event_timestamp,
     is_new_event,
     lullaby_state_settled,
     motion_event_timestamp,
-    poll_should_stay_fast,
     sound_event_timestamp,
 )
 
@@ -216,21 +216,21 @@ class TestUnmappedCommands:
         assert not caplog.records
 
 
-class TestPollInterval:
-    """Why a LAN connection does not always earn the slow poll (#61, #42)."""
+class TestCloudPoll:
+    """When a LAN session makes the cloud redundant, and when it does not (#61, #42)."""
 
-    def test_no_lan_always_polls_fast(self):
-        assert poll_should_stay_fast(lan_connected=False, has_alarm_record=False)
-        assert poll_should_stay_fast(lan_connected=False, has_alarm_record=True)
+    def test_no_lan_falls_back_to_the_cloud(self):
+        assert cloud_poll_needed(lan_connected=False, has_alarm_record=False)
+        assert cloud_poll_needed(lan_connected=False, has_alarm_record=True)
 
-    def test_lan_earns_the_slow_poll_when_alerts_push(self):
+    def test_lan_alone_is_enough_when_alerts_push(self):
         # SCD973 family: alerts arrive on DPS 250 and 141, which the LAN pushes.
-        assert not poll_should_stay_fast(lan_connected=True, has_alarm_record=False)
+        assert not cloud_poll_needed(lan_connected=True, has_alarm_record=False)
 
-    def test_lan_does_not_earn_it_when_alarms_live_in_dps_212(self):
+    def test_lan_is_not_enough_when_alarms_live_in_dps_212(self):
         # SCD951 and SCD953: 212 never arrives over the LAN and holds only the
-        # newest alarm, so a slow poll drops alerts on the floor.
-        assert poll_should_stay_fast(lan_connected=True, has_alarm_record=True)
+        # newest alarm, so dropping the poll drops alerts on the floor.
+        assert cloud_poll_needed(lan_connected=True, has_alarm_record=True)
 
 
 class TestLullabySettleWindow:

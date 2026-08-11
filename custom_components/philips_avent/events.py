@@ -141,20 +141,21 @@ def sound_event_timestamp(raw: object) -> float | None:
     return alarm_event_timestamp(raw, SOUND_COMMANDS)
 
 
-def poll_should_stay_fast(lan_connected: bool, has_alarm_record: bool) -> bool:
-    """Whether the cloud poll must keep its short interval.
+def cloud_poll_needed(lan_connected: bool, has_alarm_record: bool) -> bool:
+    """Whether the cloud has anything left to tell us about this monitor.
 
-    The slow poll exists because a LAN connection normally delivers state
-    changes as they happen, and for the families that report alarms in DPS 212
-    that cannot be relied on. Whether 212 arrives over the LAN turns out to
-    depend on the protocol version negotiated: on a session speaking 3.3 it
-    never appeared, while on 3.5 an SCD951 owner saw a motion record pushed and
-    the sensor fire 1.3 seconds later, against 35 seconds through the poll
-    (#61, rc9). Sound on the same monitor still came through the poll.
+    A LAN session delivers state changes as they happen, so while one is up the
+    cloud is not a second opinion, it is the same state fetched over the
+    internet. The one family it cannot cover reports alarms in DPS 212: whether
+    212 arrives over the LAN depends on the protocol version negotiated. On a
+    session speaking 3.3 it never appeared, while on 3.5 an SCD951 owner saw a
+    motion record pushed and the sensor fire 1.3 seconds later, against 35
+    seconds through the poll (#61, rc9). Sound on the same monitor still came
+    through the poll, and the slot holds only the newest alarm, so a second
+    alert overwrites the first.
 
-    So the fast poll stays, as the floor rather than the mechanism: the slot
-    holds only the newest alarm, so a second alert overwrites the first, and a
-    monitor that falls back to 3.3 or loses its LAN session has nothing else.
+    Those monitors therefore keep polling, and everything else runs on the LAN
+    alone until the session drops.
     """
     if not lan_connected:
         return True

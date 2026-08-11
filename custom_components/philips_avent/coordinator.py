@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import time
 from dataclasses import dataclass
@@ -18,7 +17,7 @@ from homeassistant.util.dt import utcnow
 
 from .api import PhilipsAventAPI, TuyaAPIError, is_auth_error
 from .const import DPS_ALARM_RECORD, DPS_LULLABY_CONTROL, DPS_LULLABY_STATE
-from .events import LULLABY_SETTLE_SECONDS, lullaby_state_settled, poll_should_stay_fast
+from .events import LULLABY_SETTLE_SECONDS, cloud_poll_needed, lullaby_state_settled
 from .lan import TuyaLANClient
 from .payload import dps_delta, truncated_dps
 
@@ -200,7 +199,12 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.async_set_updated_data({**self.data, **optimistic})
 
     async def set_dps(self, dps: dict, *, optimistic: dict | None = None) -> dict:
-        """Send DPS command via LAN for instant response, plus REST for cloud sync.
+        """Send a DPS command, over the LAN when there is a session for it.
+
+        A command that reached the monitor locally is done: the monitor reports
+        the change onwards itself, so repeating it through the cloud only sends
+        the same write out over the internet. The cloud is the path for a
+        monitor we cannot reach locally, not a second copy of every press.
 
         `optimistic` carries values the monitor reports back under a different
         key than the one written, such as the lullaby track in DPS 248.
@@ -210,8 +214,6 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if result:
                 _LOGGER.debug("DPS sent via LAN for %s: %s", self.camera_name, dps)
                 self._apply_optimistic(dps, optimistic)
-                with contextlib.suppress(TuyaAPIError):
-                    await self.api.set_dps(self.camera_id, dps)
                 return result
         self._apply_optimistic(dps, optimistic)
         return await self.api.set_dps(self.camera_id, dps)
@@ -244,8 +246,13 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return DPS_ALARM_RECORD in (self.data or {})
 
     async def _async_update_data(self) -> dict:
-        fast = poll_should_stay_fast(self.lan_connected, self.alerts_need_the_cloud)
-        self.update_interval = POLL_FAST if fast else POLL_SLOW
+        needs_cloud = cloud_poll_needed(self.lan_connected, self.alerts_need_the_cloud)
+        self.update_interval = POLL_FAST if needs_cloud else POLL_SLOW
+
+        # The first refresh runs before the LAN session has a baseline, and it
+        # is what fills device_info for the device registry.
+        if self.data is not None and not needs_cloud:
+            return self.data
 
         try:
             device = await self.api.get_device(self.camera_id)
