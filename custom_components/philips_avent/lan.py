@@ -181,34 +181,47 @@ class TuyaLANClient:
         if not dps:
             return
         _LOGGER.debug("LAN baseline for %s carries %d keys", self._device_id, len(dps))
+        self._publish(dps, baseline=True)
+
+    def _publish(self, dps: dict[str, Any], *, baseline: bool = False) -> None:
+        """Hand pushed state to the coordinator, on the event loop."""
         try:
-            self._on_dps_update(dps, True)
+            self._on_dps_update(dps, baseline)
         except Exception:
-            _LOGGER.exception("Error in DPS baseline callback")
+            _LOGGER.exception("Error in DPS %s callback", "baseline" if baseline else "update")
 
-    def _send_heartbeat(self) -> bool:
-        """Ping the device on the persistent socket. Returns False if it is gone.
+    def _send_heartbeat(self) -> tuple[bool, dict[str, Any] | None]:
+        """Ping the device on the persistent socket.
 
-        tinytuya does not keep persistent sockets alive by itself, so without
-        this the monitor closes the connection after 30-45 seconds of silence
-        (issue #62). A heartbeat is the plain keep-alive command, cheaper than
-        repeating the DP_QUERY that `_query_baseline` sends once per session.
+        Returns whether the socket is still usable, and any state that came back
+        with the ack. tinytuya does not keep persistent sockets alive by itself,
+        so without this the monitor closes the connection after 30-45 seconds of
+        silence (issue #62).
 
-        The response is consumed here (`nowait=False`) so a stray ack cannot turn
-        up in the next receive() and look like a device error. Only a connection
-        error counts as failure: an ack we cannot parse still proves the socket
-        is alive.
+        The ack has to be consumed here (`nowait=False`) or a stray one turns up
+        in the next receive() and looks like a device error. That read takes
+        whatever frame arrives first, so an alert the monitor pushed into this
+        window comes back in place of the ack: measured on an SCD973/26, roughly
+        half of a run of alarms reached Home Assistant only through the cloud
+        poll while this returned a bare True and dropped the payload. Hence the
+        second element - the caller publishes it on the event loop, where the
+        callback belongs.
+
+        Only a connection error counts as failure: an ack we cannot parse still
+        proves the socket is alive.
         """
         try:
             result = self._device.heartbeat(nowait=False)
         except Exception as ex:  # noqa: BLE001 - any failure here means the socket is unusable
             _LOGGER.debug("LAN heartbeat failed (%s)", ex)
-            return False
+            return False, None
 
-        if isinstance(result, dict) and is_connection_error(result.get("Err")):
+        if not isinstance(result, dict):
+            return True, None
+        if is_connection_error(result.get("Err")):
             _LOGGER.debug("LAN heartbeat unreachable: %s", result.get("Error"))
-            return False
-        return True
+            return False, None
+        return True, result.get("dps") or None
 
     async def _run(self) -> None:
         last_data = time.monotonic()
@@ -266,20 +279,20 @@ class TuyaLANClient:
                     payload_errors = 0
 
                     if data.get("dps"):
-                        try:
-                            self._on_dps_update(data["dps"], False)
-                        except Exception:
-                            _LOGGER.exception("Error in DPS update callback")
+                        self._publish(data["dps"])
 
             # Keep-alive. Runs after the receive so the two never share the
             # socket at the same time.
             now = time.monotonic()
             if heartbeat_due(now, last_heartbeat):
-                if not await self._hass.async_add_executor_job(self._send_heartbeat):
+                alive, pushed = await self._hass.async_add_executor_job(self._send_heartbeat)
+                if not alive:
                     self._disconnect()
                     failures += 1
                     await self._interruptible_sleep(reconnect_delay(failures))
                     continue
+                if pushed:
+                    self._publish(pushed)
                 last_heartbeat = now
                 last_data = now
                 failures = 0
