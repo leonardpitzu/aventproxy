@@ -164,6 +164,24 @@ def alarms_push_over_lan(protocol_version: float | None) -> bool:
     return protocol_version is not None and protocol_version >= LAN_ALARM_PUSH_MIN_VERSION
 
 
+def alert_selection(turn_on: str, turns_off: str | None) -> dict[str, bool]:
+    """The write that leaves the monitor detecting exactly what was asked for.
+
+    The monitor detects motion or sound, never both, but it does not keep its
+    two switches consistent: setting one leaves the other reading True and only
+    the last one written is acted on (measured 2026-08-11 - the monitor pushed
+    back the key that was set and nothing else). Turning one on therefore has to
+    turn the other off, or Home Assistant shows two detectors running while one
+    is silently doing nothing.
+
+    Turning one off is not paired: it disables detection, and what the other
+    switch says still stands.
+    """
+    if turns_off is None:
+        return {turn_on: True}
+    return {turn_on: True, turns_off: False}
+
+
 def cloud_poll_needed(lan_connected: bool, has_alarm_record: bool, protocol_version: float | None) -> bool:
     """Whether the cloud has anything left to tell us about this monitor.
 

@@ -21,8 +21,8 @@ Video and control run **over the local network**, with the Tuya cloud used only 
 | Temperature | `sensor` | Room temperature from the built-in sensor |
 | Night light | `switch` + `number` | On/off plus brightness 1-100 % |
 | Lullabies | `button` + `select` + `number` | Play/pause/stop/next/prev, track, timer, volume |
-| Motion alert | `switch` | Enable motion detection on the device |
-| Sound alert | `switch` | Enable sound detection on the device |
+| Motion alert | `switch` | Enable motion detection on the device. Mutually exclusive with the sound alert |
+| Sound alert | `switch` | Enable sound detection on the device. Mutually exclusive with the motion alert |
 | Motion detected | `binary_sensor` | Turns on for ~30 s when the monitor reports motion |
 | Sound detected | `binary_sensor` | Turns on for ~30 s when the monitor reports sound |
 | Privacy mode | `switch` | Camera lens on/off |
@@ -130,7 +130,7 @@ when there is no LAN session to carry it
 |---|---|---|---|
 | Night light: on/off, brightness, timer | yes | **yes** | `138`, `158`, `240`, `241` |
 | Lullaby: play, track, volume, mode, timer | yes | **yes** | `201`, `203`, `209`, `243`, `244`, `246` |
-| Motion and sound alerts: switches, sensitivity | yes | **yes** | `134`, `139`, `106`, `140` |
+| Motion and sound alerts: switches, sensitivity | yes | **yes** | `134`, `139`, `106`, `140`. The monitor detects one or the other, so turning one switch on turns the other off; turning one off leaves the other alone |
 | Privacy mode | yes | **yes** | `237` |
 
 **Reading state** used to be the gap that held several rows above at "on

@@ -17,6 +17,7 @@ from .const import (
 )
 from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
+from .events import alert_selection
 
 
 async def async_setup_entry(
@@ -30,8 +31,22 @@ async def async_setup_entry(
         entities.extend(
             [
                 AventSwitch(coordinator, cam_id, DPS_NIGHT_LIGHT, "Night Light", "mdi:lightbulb-night"),
-                AventSwitch(coordinator, cam_id, DPS_MOTION_SWITCH, "Motion Alert", "mdi:motion-sensor"),
-                AventSwitch(coordinator, cam_id, DPS_SOUND_SWITCH, "Sound Alert", "mdi:ear-hearing"),
+                AventSwitch(
+                    coordinator,
+                    cam_id,
+                    DPS_MOTION_SWITCH,
+                    "Motion Alert",
+                    "mdi:motion-sensor",
+                    turns_off=DPS_SOUND_SWITCH,
+                ),
+                AventSwitch(
+                    coordinator,
+                    cam_id,
+                    DPS_SOUND_SWITCH,
+                    "Sound Alert",
+                    "mdi:ear-hearing",
+                    turns_off=DPS_MOTION_SWITCH,
+                ),
                 AventEnumSwitch(coordinator, cam_id, DPS_PRIVACY_MODE, "Privacy Mode", "mdi:eye-off"),
             ]
         )
@@ -48,10 +63,12 @@ class AventSwitch(CoordinatorEntity, SwitchEntity):
         dps_id: str,
         name: str,
         icon: str,
+        turns_off: str | None = None,
     ):
         super().__init__(coordinator)
         self._cam_id = cam_id
         self._dps_id = dps_id
+        self._turns_off = turns_off
         self._attr_name = name
         self._attr_icon = icon
         self._attr_unique_id = f"{cam_id}_{dps_id}"
@@ -65,7 +82,7 @@ class AventSwitch(CoordinatorEntity, SwitchEntity):
         return None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.set_dps({self._dps_id: True})
+        await self.coordinator.set_dps(alert_selection(self._dps_id, self._turns_off))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.set_dps({self._dps_id: False})

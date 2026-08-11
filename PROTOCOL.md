@@ -853,11 +853,14 @@ reverse split had previously been reported on SCD951 units, so an integration
 has to read both.
 
 **Detection is one mode at a time.** The monitor detects motion (video) *or*
-sound (audio), never both: DPS `134` and `139` select which, and setting the
-second one silently retires the first. A test that enables both measures only
-the mode set last — enabling sound after motion made motion alarms stop pushing
-and appear on the cloud poll instead, which looked exactly like a per-alert-type
-difference and was not.
+sound (audio), never both: DPS `134` and `139` select which, and only the one
+written last is acted on. The monitor does **not** keep the pair consistent —
+setting `139` leaves `134` reading `true` and pushes back only the key that was
+written — so the two DPS can describe a state the hardware cannot be in. A
+client has to clear the other key itself. A test that enables both measures only
+the mode set last: enabling sound after motion made motion alarms stop pushing
+and appear on the cloud poll instead, which looked exactly like a
+per-alert-type difference and was not.
 
 **Alerts push over the LAN, from protocol 3.4 up.** Three motion alarms measured
 end to end, using the timestamp inside the 212 payload against the moment the

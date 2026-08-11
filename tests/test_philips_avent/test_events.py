@@ -12,6 +12,7 @@ from philips_avent.events import (
     EVENT_MAX_AGE_SECONDS,
     KNOWN_COMMANDS,
     LULLABY_SETTLE_SECONDS,
+    alert_selection,
     cloud_poll_needed,
     decode_event_payload,
     event_timestamp,
@@ -214,6 +215,17 @@ class TestUnmappedCommands:
         with caplog.at_level(logging.WARNING):
             motion_event_timestamp(SCD953_SOUND)
         assert not caplog.records
+
+
+class TestAlertSelection:
+    """The monitor detects motion or sound, never both (2026-08-11)."""
+
+    def test_turning_one_on_turns_the_other_off(self):
+        assert alert_selection("134", "139") == {"134": True, "139": False}
+        assert alert_selection("139", "134") == {"139": True, "134": False}
+
+    def test_a_switch_with_no_pair_is_left_alone(self):
+        assert alert_selection("138", None) == {"138": True}
 
 
 class TestCloudPoll:
