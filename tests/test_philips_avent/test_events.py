@@ -220,17 +220,22 @@ class TestCloudPoll:
     """When a LAN session makes the cloud redundant, and when it does not (#61, #42)."""
 
     def test_no_lan_falls_back_to_the_cloud(self):
-        assert cloud_poll_needed(lan_connected=False, has_alarm_record=False)
-        assert cloud_poll_needed(lan_connected=False, has_alarm_record=True)
+        assert cloud_poll_needed(lan_connected=False, has_alarm_record=False, protocol_version=None)
+        assert cloud_poll_needed(lan_connected=False, has_alarm_record=True, protocol_version=3.5)
 
-    def test_lan_alone_is_enough_when_alerts_push(self):
-        # SCD973 family: alerts arrive on DPS 250 and 141, which the LAN pushes.
-        assert not cloud_poll_needed(lan_connected=True, has_alarm_record=False)
+    def test_lan_alone_is_enough_without_an_alarm_record(self):
+        # Alerts arrive as marker values on 250 and 141, which any session pushes.
+        assert not cloud_poll_needed(lan_connected=True, has_alarm_record=False, protocol_version=3.3)
 
-    def test_lan_is_not_enough_when_alarms_live_in_dps_212(self):
-        # SCD951 and SCD953: 212 never arrives over the LAN and holds only the
-        # newest alarm, so dropping the poll drops alerts on the floor.
-        assert cloud_poll_needed(lan_connected=True, has_alarm_record=True)
+    def test_a_keyed_session_pushes_the_alarm_record(self):
+        # Measured on an SCD973/26: three motion alarms, three pushes, no poll.
+        assert not cloud_poll_needed(lan_connected=True, has_alarm_record=True, protocol_version=3.5)
+        assert not cloud_poll_needed(lan_connected=True, has_alarm_record=True, protocol_version=3.4)
+
+    def test_an_unkeyed_session_never_sees_the_alarm_record(self):
+        # On 3.3 the record never arrives, so the poll is the only sight of it.
+        assert cloud_poll_needed(lan_connected=True, has_alarm_record=True, protocol_version=3.3)
+        assert cloud_poll_needed(lan_connected=True, has_alarm_record=True, protocol_version=None)
 
 
 class TestLullabySettleWindow:

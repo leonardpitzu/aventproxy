@@ -63,17 +63,19 @@ DPS_POWER_STATUS = "205"
 DPS_FLIP = "102"
 DPS_APP_TALKING = "253"
 # Alert delivery differs by family and by negotiated LAN protocol version. A
-# decrypted capture (#51) found none of these three in the LAN DP_QUERY set, and
-# on a 3.3 session none of them ever arrived as a push. On 3.5, DPS 212 does
-# arrive: an SCD951 owner measured a motion record pushed with the sensor firing
-# 1.3 seconds later, where the poll took 35 (#61). Sound on that same monitor
-# still came through the poll, so coordinator.py keeps the fast poll for monitors
-# reporting alarms in 212 rather than counting on the push.
+# decrypted capture (#51) found none of these three in the LAN DP_QUERY set, so
+# they exist only from the moment one fires, and on a 3.3 session none of them
+# ever arrived as a push. From 3.4 up, where the session is keyed, DPS 212 does
+# push: an SCD951 owner measured a motion record arriving 1.3 seconds ahead of
+# the poll's 35 (#61), and on an SCD973/26 both a motion and a sound record
+# pushed within two seconds (2026-08-11). See events.cloud_poll_needed.
 DPS_ALERT_EVENT = "250"
 DPS_DECIBEL_EVENT = "141"
-# Alarm record with the snapshot the camera uploaded. The SCD951 and SCD953
-# family reports motion here instead of on DPS 250 (issues #61, #42); see
-# events.py for the payload. One slot holding the newest alarm, not a queue.
+# Alarm record with the snapshot the camera uploaded, and the alert channel in
+# practice: on an SCD973/26 it carried both `ipc_motion` and `ipc_bang` while
+# 250 and 141 stayed empty throughout, so it is not the SCD951-and-SCD953-only
+# key it was once taken for (issues #61, #42). See events.py for the payload.
+# One slot holding the newest alarm, not a queue.
 DPS_ALARM_RECORD = "212"
 
 LULLABY_TRACK_MAP = {

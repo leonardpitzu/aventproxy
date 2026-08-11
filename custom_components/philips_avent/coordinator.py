@@ -13,7 +13,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util.dt import utcnow
 
 from .api import PhilipsAventAPI, TuyaAPIError, is_auth_error
 from .const import DPS_ALARM_RECORD, DPS_LULLABY_CONTROL, DPS_LULLABY_STATE
@@ -27,10 +26,6 @@ _LOGGER = logging.getLogger(__name__)
 
 POLL_FAST = timedelta(seconds=30)
 POLL_SLOW = timedelta(seconds=120)
-
-# RSSI moves slowly and costs a second API call per poll, so it is refreshed on
-# its own schedule rather than on every tick of a fast poll.
-RSSI_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass
@@ -67,7 +62,6 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.camera_id = camera_id
         self.camera_name = camera_name
         self.device_info: dict = {}
-        self.rssi: int | None = None
         self._local_key = local_key
         self._lan_client: TuyaLANClient | None = None
         self.last_lan_dps: dict[str, Any] = {}
@@ -75,7 +69,6 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_lullaby: str | None = None
         self._pending_lullaby_since: float | None = None
         self._lullaby_unsub = None
-        self._rssi_refreshed_at = None
 
     async def start_lan(self) -> None:
         if not self._local_key:
@@ -106,6 +99,11 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def lan_ip(self) -> str:
         """Monitor's address, so the bridge need not repeat the discovery."""
         return (self._lan_client.ip if self._lan_client else None) or ""
+
+    @property
+    def lan_protocol_version(self) -> float | None:
+        """Protocol the live LAN session negotiated, which decides what it can push."""
+        return self._lan_client.protocol_version if self._lan_client else None
 
     @callback
     def _on_lan_dps_update(self, dps: dict[str, Any], baseline: bool = False) -> None:
@@ -218,35 +216,23 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._apply_optimistic(dps, optimistic)
         return await self.api.set_dps(self.camera_id, dps)
 
-    async def _refresh_rssi(self) -> None:
-        """Refresh the WiFi signal, at most once per RSSI_INTERVAL."""
-        now = utcnow()
-        if self._rssi_refreshed_at and now - self._rssi_refreshed_at < RSSI_INTERVAL:
-            return
-        self._rssi_refreshed_at = now
-        try:
-            rssi_data = await self.api.get_rssi(self.camera_id)
-        except TuyaAPIError:
-            return
-        self.rssi = rssi_data.get("value")
-
     @property
     def alerts_need_the_cloud(self) -> bool:
-        """Whether alerts on this monitor are only visible on the cloud poll.
+        """Whether this monitor reports alarms in the record DPS.
 
-        The SCD951 and SCD953 family reports alarms in DPS 212, and whether that
-        key arrives over the LAN depends on the negotiated protocol version: it
-        never did on 3.3, while on 3.5 an owner measured a motion record pushed
-        and the sensor firing in 1.3 seconds (#61, rc9). Sound on the same
-        monitor still arrived through the poll. DPS 212 is also a single slot
-        holding the newest alarm rather than a queue, so a second alert
-        overwrites the first and whatever the poll misses is gone. The fast poll
-        therefore stays for these models as the floor, not as the mechanism.
+        Alarms land in DPS 212 as a timestamped record on some firmwares and in
+        250 and 141 as marker values on others, and the model does not say
+        which: an SCD973/26 used 212 exclusively while both marker keys stayed
+        empty. 212 is also a single slot holding the newest alarm rather than a
+        queue, so a second alert overwrites the first and anything the session
+        misses is gone. Whether the session can carry it at all depends on the
+        protocol version, which is what decides the poll - see
+        events.cloud_poll_needed.
         """
         return DPS_ALARM_RECORD in (self.data or {})
 
     async def _async_update_data(self) -> dict:
-        needs_cloud = cloud_poll_needed(self.lan_connected, self.alerts_need_the_cloud)
+        needs_cloud = cloud_poll_needed(self.lan_connected, self.alerts_need_the_cloud, self.lan_protocol_version)
         self.update_interval = POLL_FAST if needs_cloud else POLL_SLOW
 
         # The first refresh runs before the LAN session has a baseline, and it
@@ -257,7 +243,6 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             device = await self.api.get_device(self.camera_id)
             self.device_info = device
-            await self._refresh_rssi()
             api_dps = device.get("dps", {})
             changed = dps_delta(self.data, api_dps)
             if changed:

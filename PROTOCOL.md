@@ -843,20 +843,55 @@ Controlled testing with motion and sound detection revealed the event DPS codes:
 |-----|-------|---------|
 | 250 | `"motion_detection"` | Motion detected by camera |
 | 141 | `"decibel_upload"` | Sound detected above threshold |
+| 212 | base64 JSON alarm record | Motion (`ipc_motion`) or sound (`ipc_bang`), with a timestamp and the snapshot the camera uploaded |
 
-**DPS 250** is the primary alert event channel. Motion events arrive on this DPS even when DPS 134 (motion switch) is set to `false` - the switch controls whether the app shows notifications, not whether the device detects motion.
+**Later correction (measured 2026-08-11, SCD973/26 on a 3.5 session).** Which of
+these carries an alert is firmware-dependent and cannot be predicted from the
+model. On this monitor **250 and 141 were empty throughout** a run of a dozen
+alarms; every one of them arrived in **212**, motion and sound alike. The
+reverse split had previously been reported on SCD951 units, so an integration
+has to read both.
 
-**DPS 141** fires when the microphone picks up sound above the configured sensitivity threshold.
+**Detection is one mode at a time.** The monitor detects motion (video) *or*
+sound (audio), never both: DPS `134` and `139` select which, and setting the
+second one silently retires the first. A test that enables both measures only
+the mode set last — enabling sound after motion made motion alarms stop pushing
+and appear on the cloud poll instead, which looked exactly like a per-alert-type
+difference and was not.
 
-Both events arrive via LAN push with sub-second latency, making them suitable for HA automations (e.g., turn on a light when motion is detected, send a notification when crying is heard).
+**Alerts push over the LAN, from protocol 3.4 up.** Three motion alarms measured
+end to end, using the timestamp inside the 212 payload against the moment the
+push was handled: 2.4 s, 0.2 s and 0.6 s. On a 3.3 session the record never
+arrives at all and only a cloud poll ever sees it. The alert keys are also
+absent from the `DP_QUERY` key set, so they exist only from the moment one
+fires.
+
+**The camera rate-limits alarms.** Consecutive motion records came 182 s and
+195 s apart however often the camera was waved at, so a missing record is
+usually the camera's cooldown rather than a lost frame. A lost push is
+distinguishable: it turns up on a later poll tick, a suppressed alarm never
+exists.
+
+**The keep-alive can eat an alert.** tinytuya's `heartbeat(nowait=False)` reads
+a frame off the same socket the pushes arrive on and returns whatever comes
+first, so an alarm pushed into that window is delivered to the keep-alive
+instead of to the receive loop. With an 8 s keep-alive against a 5 s socket
+timeout this lost about half of them — five of ten alarms in one run reached
+Home Assistant only via the cloud poll, 16 to 29 s late, with the session never
+dropping. Publish whatever the keep-alive read.
+
+**The alert is local, the snapshot is not.** A 212 record names a JPEG in a Tuya
+storage bucket (`ty-eu-storage30/...`), so the notification arrives without the
+cloud but the picture it points at does not.
 
 #### Updated DPS Reference
 
 | DPS | Name | Type | Push via LAN? |
 |-----|------|------|---------------|
 | 207 | Temperature (°C x 100) | int | Yes |
-| 250 | Alert event | string | Yes - `"motion_detection"` |
-| 141 | Sound event | string | Yes - `"decibel_upload"` |
+| 212 | Alarm record | base64 JSON | Yes, from protocol 3.4 up - `ipc_motion` / `ipc_bang` |
+| 250 | Alert event | string | Yes - `"motion_detection"` (empty on some firmwares) |
+| 141 | Sound event | string | Yes - `"decibel_upload"` (empty on some firmwares) |
 | 138 | Night light | bool | Yes (initial state) |
 | 134 | Motion switch | bool | Yes (initial state) |
 | 139 | Sound switch | bool | Yes (initial state) |

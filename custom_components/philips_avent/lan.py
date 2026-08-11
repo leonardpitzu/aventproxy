@@ -60,6 +60,11 @@ class TuyaLANClient:
         """Address of the monitor, once a LAN session has resolved one."""
         return self._ip
 
+    @property
+    def protocol_version(self) -> float | None:
+        """Protocol the live session negotiated, or None when there is no session."""
+        return self._version if self.connected else None
+
     async def stop(self) -> None:
         self._stop_event.set()
         if self._task and not self._task.done():

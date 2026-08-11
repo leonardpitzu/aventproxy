@@ -36,7 +36,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Philips
             "dps": coordinator.data,
             "lan_connected": coordinator.lan_connected,
             "update_interval": str(coordinator.update_interval),
-            "rssi": coordinator.rssi,
             "device_info": async_redact_data(coordinator.device_info, REDACT_KEYS) if coordinator.device_info else None,
         }
 

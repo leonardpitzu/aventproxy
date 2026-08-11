@@ -70,18 +70,19 @@ class AventLullabyPlaying(CoordinatorEntity, BinarySensorEntity):
 
 
 class AventAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """An alert the monitor reports, from whichever DPS its family uses.
+    """An alert the monitor reports, from whichever DPS its firmware uses.
 
-    Two mechanisms, because the family differs (issues #40, #42, #59, #61):
+    Two mechanisms, and which one a monitor uses is not predictable from the
+    model (issues #40, #42, #59, #61):
 
-    - A push DPS set to a marker value, used by the SCD973 and SCD923 family.
-      It is an event that the coordinator merges into persistent state, so only
-      a payload that arrived since the last look counts; otherwise every cloud
+    - A push DPS set to a marker value, 250 for motion and 141 for sound. It is
+      an event that the coordinator merges into persistent state, so only a
+      payload that arrived since the last look counts; otherwise every cloud
       poll replays the last alert (the defect fixed for sound in #65).
-    - DPS 212, the alarm record the SCD951 and SCD953 family posts instead,
-      which carries its own timestamp. That timestamp is what makes it usable:
-      the value stays in device state, so freshness comes from the stamp rather
-      than from catching the push.
+    - DPS 212, an alarm record carrying its own timestamp. That timestamp is
+      what makes it usable: the value stays in device state, so freshness comes
+      from the stamp rather than from catching the push. On an SCD973/26 this
+      was the only one of the two ever populated.
 
     The sensor latches on and clears itself after ALERT_CLEAR_SECONDS.
     """

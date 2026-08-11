@@ -9,7 +9,7 @@
 
 A custom [Home Assistant](https://www.home-assistant.io/) integration for [Philips Avent](https://www.philips.co.uk/c-m-mo/baby-monitors) SCD9xx baby monitors - live video, room temperature, night light, lullabies and motion/sound alerts.
 
-Video and control run **over the local network**, with the Tuya cloud used only once at setup to fetch the per-device keys. When the local path is unavailable the integration falls back to the cloud automatically, so a camera on another subnet still works.
+Video and control run **over the local network**, with the Tuya cloud used only once at setup to fetch the per-device keys. While a local session is up nothing is sent to or fetched from the cloud at all: commands go out on it, and state, alerts included, arrives on it as the monitor pushes them. When the local path is unavailable the integration falls back to the cloud automatically, so a camera on another subnet still works.
 
 > This is a fork of [thekoma/aventproxy](https://github.com/thekoma/aventproxy).
 
@@ -19,7 +19,6 @@ Video and control run **over the local network**, with the Tuya cloud used only 
 |---|---|---|
 | Live video | `camera` | H.264 over RTSP from the bridge add-on: 1280x720 on the local path, 1080p on the cloud fallback |
 | Temperature | `sensor` | Room temperature from the built-in sensor |
-| WiFi signal | `sensor` | Monitor's RSSI |
 | Night light | `switch` + `number` | On/off plus brightness 1-100 % |
 | Lullabies | `button` + `select` + `number` | Play/pause/stop/next/prev, track, timer, volume |
 | Motion alert | `switch` | Enable motion detection on the device |
@@ -121,11 +120,11 @@ live monitor, not inferred from the protocol.
 | Feature | Cloud | Local | What closing the gap needs |
 |---|---|---|---|
 | Temperature | yes | **yes** | DPS `207` is in the monitor's LAN key set: read once when the session comes up, then pushed on change |
-| Motion detected | yes, via the poll | **partial** | DPS `212` pushes on a 3.5 session — measured at 1.3 s against 35 s for the poll — but is absent from the key set, so it exists only from the moment it fires |
-| Sound detected | yes, via the poll | **no** | `250` and `141` have never been seen on the LAN, and `212` carried motion but not sound on the same monitor. Needs a capture of a sound alert on 3.5 |
-| WiFi signal | yes, a separate call every 5 min | **no** | Not a data point at all; it comes from `tuya.m.device.upgrade.rssi.info.query`. No local equivalent is known |
+| Motion detected | yes, via the poll | **yes**, verified | DPS `212` pushes on a session from 3.4 up. Three alarms in a row arrived in 0.2 to 2.4 s, none needed the poll |
+| Sound detected | yes, via the poll | **yes**, verified | Same key, `cmd: ipc_bang`, pushed within a second. `250` and `141` stayed empty throughout on this monitor |
 
-**Controls** — every write is tried on the LAN first with a cloud mirror behind it
+**Controls** — every write goes out on the LAN, and reaches for the cloud only
+when there is no LAN session to carry it
 
 | Feature | Cloud | Local | Notes |
 |---|---|---|---|
@@ -157,8 +156,29 @@ retained alert value, and putting it through the push path would fire the motion
 and sound sensors on every reconnect, so it updates state without counting as
 news.
 
-So the cloud poll is now a backstop rather than the source of truth, for
-everything except alerts.
+#### The cloud is a fallback, not a backstop
+
+With state read at connect and pushed on change, a live LAN session leaves the
+cloud with nothing to contribute, so the integration stops asking it. While one
+is up there is no poll and no mirrored write: commands go out locally, and the
+answer comes back on the same session.
+
+Alerts were the last thing holding the poll open, and they turned out to be
+local too. On a session from 3.4 up, the alarm record in DPS `212` is pushed —
+three motion alarms measured 0.2 to 2.4 s after the event, against 16 to 29 s
+when the same monitor's alerts were arriving on the poll. Below 3.4 the record
+never arrives, so those sessions keep polling.
+
+Half of the alarms used to go missing, which is what made alerts look like a
+cloud-only feature. `heartbeat(nowait=False)` reads a frame off the same socket
+the pushes arrive on and takes whatever comes first, so an alarm landing in that
+window came back in place of the keep-alive's ack and was dropped along with it.
+The keep-alive now publishes whatever it read.
+
+What still crosses the internet: the one-time setup fetch, the first refresh
+after a restart, and whatever the monitor does on its own account — an alarm
+record names a snapshot the camera uploads to Tuya storage, so the alert is
+local but the picture behind it is not.
 
 #### The parent unit says all of this is possible
 
@@ -222,10 +242,12 @@ authenticates it is written at manufacture.
 
 Since only the camera's side of the conversation is needed, and the camera is
 always on the house access point, the display can be anywhere once it has
-switched. One capture from that access point should answer how sound alerts
-reach a local peer when `250` and `141` appear in no `DP_QUERY`, and whether
-the signal reading is wifi strength or the camera-to-display link — which
-nothing in the cloud API would ever tell us.
+switched. Alerts are no longer among the questions that capture has to answer —
+they turned out to push over the ordinary LAN session, in DPS `212` — but the
+display raises them while `134` and `139` are both off, so whatever it listens
+to is not the channel the app and this integration use. The signal reading it
+draws is the other open question: no DPS holds it, and nothing in the cloud API
+would say whether it measures wifi strength or the camera-to-display link.
 
 That leaves two things outstanding: talkback, and a camera that comes up with
 local access working while it is cut off from the internet. The parent unit
@@ -479,11 +501,6 @@ response includes `vedioClaritys: [2, 4, 8]`:
 
 Set the desired quality when initiating the WebRTC connection by selecting the
 appropriate stream type in the SDP offer.
-
-### Signal Strength
-
-Not available via DPS. Can be read from the device info's network status
-or via `tuya.m.device.upgrade.rssi.info.query`.
 
 ### Examples
 

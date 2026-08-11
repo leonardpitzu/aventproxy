@@ -4,18 +4,26 @@ Not every monitor reports an alert the same way, which is why the binary sensors
 stayed off on several models while the Philips app got the notification (issues
 #40, #42, #59, #61):
 
-- The SCD973 and SCD923 family (`kzm54lhabeeucq5a`) sets DPS 250 to
-  `motion_detection` and DPS 141 to `decibel_upload`.
-- The SCD951 and SCD953 family (`selj2idknqhjnids`) leaves both empty and posts
-  the alarm to DPS 212 instead, as base64 JSON describing the snapshot it
-  uploaded:
+- Some firmwares set DPS 250 to `motion_detection` and DPS 141 to
+  `decibel_upload`.
+- Others leave both empty and post the alarm to DPS 212 instead, as base64 JSON
+  describing the snapshot it uploaded:
   `{"v":"4.0","cmd":"ipc_motion","alarm":true,"time":1783686591,"files":[...]}`
-  (from the diagnostics on #61). Its noise alert uses the same shape with
+  (from the diagnostics on #61). A noise alert uses the same shape with
   `cmd: ipc_bang` (from the diagnostics on #42).
+
+Which of the two applies is not a property of the model. DPS 212 was taken for
+an SCD951-and-SCD953 trait until an SCD973/26 was watched through a run of
+alarms and reported every one of them in 212, with 250 and 141 empty the whole
+time (2026-08-11). So both paths are read on every monitor.
 
 DPS 212 carries its own timestamp, which makes it usable on the cloud poll as
 well: the value sticks around in device state, so freshness comes from the
 timestamp rather than from having seen the push arrive.
+
+One alarm at a time, whichever key carries it: the monitor detects motion or
+sound, never both, and DPS 134 and 139 select which. A test that turns both on
+measures only the one set last.
 
 No Home Assistant imports here, so the parsing is unit-tested on its own.
 """
@@ -141,25 +149,38 @@ def sound_event_timestamp(raw: object) -> float | None:
     return alarm_event_timestamp(raw, SOUND_COMMANDS)
 
 
-def cloud_poll_needed(lan_connected: bool, has_alarm_record: bool) -> bool:
+# A LAN session only carries alarms once it negotiates a session key, which is
+# protocol 3.4 and up. On 3.3 the alarm keys never arrive and the cloud poll is
+# the only way one is ever seen. Measured both ways: an SCD951 owner on 3.3 saw
+# nothing, and on 3.5 saw a motion record pushed with the sensor firing 1.3
+# seconds later against 35 through the poll (#61, rc9); on an SCD973/26 at 3.5,
+# three motion alarms in a row each pushed within 2.4 seconds and none needed
+# the poll (2026-08-11).
+LAN_ALARM_PUSH_MIN_VERSION = 3.4
+
+
+def alarms_push_over_lan(protocol_version: float | None) -> bool:
+    """Whether a session at this protocol delivers alarm records as pushes."""
+    return protocol_version is not None and protocol_version >= LAN_ALARM_PUSH_MIN_VERSION
+
+
+def cloud_poll_needed(lan_connected: bool, has_alarm_record: bool, protocol_version: float | None) -> bool:
     """Whether the cloud has anything left to tell us about this monitor.
 
     A LAN session delivers state changes as they happen, so while one is up the
     cloud is not a second opinion, it is the same state fetched over the
-    internet. The one family it cannot cover reports alarms in DPS 212: whether
-    212 arrives over the LAN depends on the protocol version negotiated. On a
-    session speaking 3.3 it never appeared, while on 3.5 an SCD951 owner saw a
-    motion record pushed and the sensor fire 1.3 seconds later, against 35
-    seconds through the poll (#61, rc9). Sound on the same monitor still came
-    through the poll, and the slot holds only the newest alarm, so a second
-    alert overwrites the first.
+    internet.
 
-    Those monitors therefore keep polling, and everything else runs on the LAN
-    alone until the session drops.
+    The one thing that can be missing from it is an alarm. Monitors reporting
+    alarms in DPS 212 need a session that can push it, and that turns on the
+    protocol version rather than on the model: the same key that never appeared
+    on 3.3 arrives within a second or two on 3.5.
     """
     if not lan_connected:
         return True
-    return has_alarm_record
+    if not has_alarm_record:
+        return False
+    return not alarms_push_over_lan(protocol_version)
 
 
 def is_new_event(

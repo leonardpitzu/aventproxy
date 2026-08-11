@@ -288,12 +288,6 @@ class PhilipsAventAPI:
             {"devId": dev_id, "gwId": dev_id, "dps": dps},
         )
 
-    async def get_rssi(self, dev_id: str) -> dict:
-        return await self._call(
-            "tuya.m.device.upgrade.rssi.info.query",
-            post_data={"devId": dev_id},
-        )
-
     async def get_rtc_config(self, dev_id: str) -> dict:
         return await self._call("smartlife.m.rtc.config.get", post_data={"devId": dev_id})
 
