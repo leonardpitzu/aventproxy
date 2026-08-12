@@ -36,7 +36,7 @@ class TestDPSConstants:
             assert 0 <= celsius <= 50
 
     def test_lullaby_control_values(self):
-        valid = ["play", "pause", "stop", "next", "prev"]
+        valid = ["play", "stop", "next", "prev"]
         for v in valid:
             assert isinstance(v, str)
 

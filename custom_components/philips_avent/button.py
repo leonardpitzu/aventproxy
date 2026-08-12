@@ -22,7 +22,6 @@ async def async_setup_entry(
     for cam_id, coordinator in coordinators.items():
         for action, icon in [
             ("play", "mdi:play"),
-            ("pause", "mdi:pause"),
             ("stop", "mdi:stop"),
             ("next", "mdi:skip-next"),
             ("prev", "mdi:skip-previous"),

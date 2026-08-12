@@ -20,7 +20,7 @@ Video and control run **over the local network**, with the Tuya cloud used only 
 | Live video | `camera` | H.264 over RTSP from the bridge add-on: 1280x720 on the local path, 1080p on the cloud fallback |
 | Temperature | `sensor` | Room temperature from the built-in sensor |
 | Night light | `switch` + `number` | On/off plus brightness 1-100 % |
-| Lullabies | `button` + `select` + `number` | Play/pause/stop/next/prev, track, timer, volume |
+| Lullabies | `button` + `select` + `number` | Play/stop/next/prev, track, timer, volume |
 | Motion alert | `switch` | Enable motion detection on the device. Mutually exclusive with the sound alert |
 | Sound alert | `switch` | Enable sound detection on the device. Mutually exclusive with the motion alert |
 | Motion detected | `binary_sensor` | Turns on for ~30 s when the monitor reports motion |
@@ -385,7 +385,7 @@ The ones this integration exposes as entities:
 | 138 | `bulb_switch` | Night light | on/off |
 | 139 | `decibel_switch` | Sound alert | on/off |
 | 158 | `floodlight_lightness` | Brightness | 1-100 |
-| 201 | `play_control` | Lullaby | play/pause/stop/next/prev |
+| 201 | `play_control` | Lullaby | play/stop/next/prev |
 | 207 | `sensor_temperature` | Temperature | °C x 100 |
 | 209 | `play_volume` | Volume | 1-100 |
 | 212 | `alarm_message` | Alarm record (motion/sound event) | base64 JSON |
@@ -432,7 +432,7 @@ client.set_dps("YOUR_DEVICE_ID", {"201": "play"})   # play lullaby
 
 | ID | Code | Name | Type | Mode | Values/Range |
 |----|------|------|------|------|-------------|
-| 201 | `play_control` | Playback control | enum | rw | `play`, `pause`, `stop`, `next`, `prev` |
+| 201 | `play_control` | Playback control | enum | rw | `play`, `stop`, `next`, `prev` |
 | 202 | `play` | Play specific track | string | rw | track identifier |
 | 203 | `play_mode` | Loop mode | enum | rw | `loop`, `loop1`, `shuffle` |
 | 209 | `play_volume` | Volume | value | rw | 1-100 (step 1) |

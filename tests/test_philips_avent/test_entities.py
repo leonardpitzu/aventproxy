@@ -117,7 +117,7 @@ class TestLullabyButton:
         assert DPS_LULLABY_CONTROL == "201"
 
     def test_all_actions_produce_valid_dps(self):
-        actions = ["play", "pause", "stop", "next", "prev"]
+        actions = ["play", "stop", "next", "prev"]
         for action in actions:
             dps = {DPS_LULLABY_CONTROL: action}
             assert isinstance(dps[DPS_LULLABY_CONTROL], str)

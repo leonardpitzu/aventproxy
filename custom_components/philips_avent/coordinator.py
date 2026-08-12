@@ -20,7 +20,7 @@ from .events import LULLABY_SETTLE_SECONDS, cloud_poll_needed, lullaby_state_set
 from .lan import TuyaLANClient
 from .payload import dps_delta, truncated_dps
 
-LULLABY_STATE_MAP = {"play": "playing", "pause": "stopping", "stop": "stopping"}
+LULLABY_STATE_MAP = {"play": "playing", "stop": "stopping"}
 
 _LOGGER = logging.getLogger(__name__)
 
