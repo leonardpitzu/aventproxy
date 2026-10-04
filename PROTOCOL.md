@@ -620,6 +620,18 @@ Dynamic (per user session):
 
 #### 11.1 Direct RTSP Authentication (Weeks of Effort)
 
+> **Note (2026-10-04, see [section 22](#22-the-parent-units-local-video-path-rtsp)).**
+> This conclusion holds, with one addition: port 6000 is not only where the
+> video key is negotiated, it is also an **authorization gate** — the camera
+> serves 554 at all only to a client that has completed the 6000 handshake. The
+> RTSP transport and the SDP parameter sets are plaintext; the coded slice data
+> is AES-encrypted (confirmed: IDR slice headers are ciphertext, and the
+> bridge's `pkg/lan/media.go` shows the camera's `IV ‖ AES-CBC` media format).
+> Section 22 has the full framing, checksum and handshake decode.
+>
+> *(An interim draft briefly claimed the video was plaintext — that was an
+> extraction artifact, now corrected.)*
+
 **Approach:** The camera's RTSP server on port 554 is open (no auth) but streams AES-encrypted video. A custom proxy (`baby_rtsp_proxy.py`) successfully handled the RTSP handshake and received video frames - but they were encrypted with an AES key negotiated on port 6000 using the Tuya LAN protocol.
 
 **What worked:** DESCRIBE, SETUP, PLAY all succeed. Raw H.264 NALUs are received.
@@ -1654,6 +1666,190 @@ certificate would complete the handshake and expose the MQTT `CONNECT` that
 follows, which is where the device's own credentials live. That is the only
 remaining route to an offline monitor, and it needs a certificate from a public
 authority to test.
+
+### 22. The Parent Unit's Local Video Path (RTSP)
+
+The portable display (the parent unit, "PU") gets video from the camera with no
+cloud at all — it works with the camera's WAN cut and even on a camera that
+booted with no internet, which is the offline case sections 20-21 could not
+crack through the app's path. This section is a capture of how the PU does it,
+taken at the UniFi AP both units associate with, decrypted at the Ethernet
+layer (so WPA2 is already off). It corrects [section 11.1](#111-direct-rtsp-authentication-weeks-of-effort).
+
+**The PU does not use Tuya P2P/WebRTC.** It opens four plain channels to the
+camera:
+
+| Channel | Purpose |
+|---------|---------|
+| TCP 554 | Standard **RTSP**. `rtsp://<cam>/av2_0`, no `Authorization`, no `401`. |
+| TCP 6000 | A binary handshake in a `55aa 7e7f` framing. The **authorization gate** for 554. |
+| TCP 8684 | Keepalive / time-sync. PU sends an ASCII id, camera replies its wall clock. |
+| UDP 6100 | A `{"ssid":"phi_<...>"}` probe for the camera's direct-mode SoftAP; fails over to Wi-Fi. |
+
+The PU's RTSP `User-Agent` is `sky-light (ysp20200805)`, which points at an ODM
+camera SDK ("ysp"/"sky-light", AltoBeam chipset) rather than anything Philips
+wrote.
+
+**The RTSP control is standard and in the clear** (the media payload is not —
+see below). The negotiation:
+
+```
+OPTIONS  rtsp://<cam>/av2_0 RTSP/1.0
+DESCRIBE rtsp://<cam>/av2_0 RTSP/1.0      -> 200, SDP below
+SETUP    trackID=0  (Transport: RTP/AVP/TCP;unicast;interleaved=0-1)
+SETUP    trackID=1  (Transport: RTP/AVP/TCP;unicast;interleaved=2-3)
+PLAY     rtsp://<cam>/av2_0/
+```
+
+SDP:
+
+```
+m=video 0 RTP/AVP 96
+a=rtpmap:96 H264/90000
+a=fmtp:96  packetization-mode=1; profile-level-id=4D0033; sprop-parameter-sets=...
+m=audio 0 RTP/AVP 97
+a=rtpmap:97 L16/16000/1
+```
+
+After `PLAY`, RTP flows interleaved on the same TCP socket: `24 <ch> <len16>`
+then an RTP header `80 60 <seq> <ts> <ssrc>` (version 2, payload type 96), then
+the H.264 NAL framing (FU-A fragments, type 28). **The framing is in the clear,
+but the coded payload is not.** The RTP headers, the FU-A indicator/header, the
+PPS (`28ee3c80`, matching the SDP) and the SDP's parameter sets are all
+plaintext — but the slice *content* is AES-encrypted:
+
+- Every decoded frame comes out grey (the decoder conceals all 8160 macroblocks).
+- An IDR's first FU-A fragment begins `3c 85` then bytes whose top bit is 0, so
+  `first_mb_in_slice ≠ 0` — impossible for a valid IDR, whose first slice must
+  cover macroblock 0. The slice header is ciphertext.
+- The bridge's own Tuya-P2P media path confirms the mechanism: `pkg/lan/media.go`
+  decrypts media as `IV(16) ‖ AES-CBC(key, …)` with PKCS7 padding. The camera
+  encrypts its media on every path; only the transport differs.
+
+So **section 11.1 was right after all: the video is AES-encrypted, and the
+port-6000 handshake is what establishes the key** (this corrects an earlier
+draft of this section that wrongly called the video plaintext). The SDP still
+gives the true SPS — **H.264 Main profile, level 5.1, 1920×1080** — and the
+audio is L16/16 kHz mono, so the stream is 1080p, higher than the bridge's
+current local WebRTC path (1280×720). But reaching a viewable picture needs the
+6000-derived key, not just the RTSP pull.
+
+**The gate is specifically port 6000.** A cold RTSP client gets
+`400 Bad OPTIONS request` regardless of the URL form or the User-Agent. Tested
+live against the camera, with the `localKey` in hand:
+
+- A full, working tinytuya **6668** session (protocol 3.5, 39 DPS read back)
+  held open from a third host does **not** open 554. So the gate is not "any
+  authenticated Tuya session from this IP".
+- Replaying the **8684** registration (send the ASCII id, the camera returns a
+  fresh timestamp; its 2-byte checksum field is not validated) does **not**
+  open 554 either.
+- Only a client that has completed the **6000** handshake from its own IP is
+  served RTSP. The camera was streaming to the real PU at the same moment it
+  returned 400 to another host, so the gate is per-client.
+
+**The 6000 frame format** (fully decoded from the capture):
+
+```
+55 aa 7e 7f | crc(2, LE) | len(2, LE) | op(1) | flag(1) | seq(2, LE) | body
+  magic         CRC-16       total       opcode   flags      counter
+```
+
+- **Checksum**: CRC-16/CCITT, polynomial `0x1021`, **init `0x1234`**, no input/output
+  reflection, no final XOR, computed over the bytes from the length field onward
+  (`frame[6:]`), stored little-endian at offset 4. Verified against all 156
+  distinct frames in the capture. It *is* validated on port 6000 (unlike 8684),
+  so a client must recompute it for every frame it sends.
+- **flag**: bit `0x80` marks a response. The camera's challenges (`op30`, `op31`)
+  and keepalives (`op2d`) arrive with the low nibble set (`0x09`); the PU answers
+  with the identical body and the flag OR'd with `0x80`.
+- **body**: `15-byte header/nonce` followed by `N × 16` bytes. Every variable
+  payload (`op03`, `op0e`, `op02`, `op17`, `op05`, `op22`) satisfies
+  `(len − 15) mod 16 == 0`, and `op22` shows **repeated 16-byte ciphertext
+  blocks** — the signature of **AES-128-ECB**. Cheap on the camera's SoC, which
+  fits a cost-constrained design.
+
+**Choreography** (one handshake):
+
+| Step | Dir | Op | Body |
+|------|-----|----|------|
+| 1 | PU→cam | `01` | 15-byte PU nonce + `"0010"` (version) |
+| 2 | cam→PU | `30` | 15-byte **challenge**; PU echoes it (flag\|0x80) |
+| 3 | cam→PU | `31` | 15-byte **challenge**; PU acks |
+| 4 | PU→cam | `03` | 96 bytes ECB (6 blocks); camera echoes and appends one 16-byte block |
+| 5 | PU→cam | `0e` | 1 block; camera echoes it |
+| 6 | PU→cam | `02` | 5 blocks; camera replies with **61 blocks** (976 bytes) |
+| 7 | PU→cam | `17` | 1 block; camera replies with 21 blocks |
+| 8+ | PU→cam | `01'`→`05` | a second phase: a fresh PU nonce, then `op05` session messages |
+
+Throughout, the camera injects `op2d` keepalives that the PU must echo, and an
+`op11` message carries a plaintext ASCII wall-clock (`h20261004193359`), the same
+time-sync the 8684 channel does — so the 15-byte field is a per-message plaintext
+payload in some messages (`op11`, the `op30`/`op31` challenges, the `op2d` token),
+not always an opaque nonce.
+
+**ECB leakage (useful for the eventual crack).** Because the mode is ECB,
+repeated ciphertext blocks expose repeated plaintext, and several hold across the
+transcript: `op05` is a constant 128-byte (8-block) message within a handshake;
+`op02` and `op05` share an identical plaintext block; and `op22` is filled with a
+16-byte value repeated three times that also appears as `op03`'s final block —
+a per-handshake secret (likely the derived session key/token) recurring across
+messages. Each such block is a known-plaintext anchor: once `pd` is in hand,
+`AES-ECB(key?, plaintext?) == ciphertext` validates the key and construction in
+one check, so deriving `f` is faster than a blind search.
+
+**It is a real challenge-response, and the challenge rotates.** The camera's
+`op30`/`op31` were byte-identical across the two handshakes in the capture
+(minutes apart) but had **changed when re-probed about an hour later with no
+camera reboot** — so they are session/time-scoped, not device or per-boot
+constants. The PU's `op03`/`op02` are a function of the live challenge (they were
+constant in the capture because the challenge was; they do **not** depend on the
+PU's per-connection `op01` nonce). AES-128-ECB under the Tuya `localKey` yields
+nothing on the blobs, so the key is not the `localKey`.
+
+**Why a stale replay fails (measured).** With the CRC understood, replaying the
+recorded PU frames — echoing the *live* challenge correctly — drives the
+handshake to completion: the camera answers every step (`op03`/`op0e`/`op02`/
+`op17`/`op05` responses). But port 554 still returns `400`, because the recorded
+`op03`/`op02` were computed against the *old* challenge. The camera processes the
+frames but does not authorize. So there is **no replay shortcut**: a client must
+read the live `op30`/`op31` and **compute** its responses from them plus the
+pairing secret.
+
+**Where the key comes from — the QR.** The camera and PU re-pair when a button
+combination on the parent unit shows a **QR code** that the camera scans. The QR
+decodes to JSON:
+
+```json
+{"dev":"pu", "si":"phi_<PU-id>", "pd":"<base64, 16 bytes>", "ver":"001"}
+```
+
+`si` is the PU's SoftAP SSID (same `phi_*` scheme as the camera's SoftAP seen in
+the UDP 6100 probe); **`pd` is exactly 16 bytes — AES-128 key sized — and is the
+pairing secret**, generated fresh per pairing (an un-activated QR's `pd` does not
+match an existing session). `pd` plausibly does double duty: the ASCII form as
+the Direct-mode WPA passphrase, the 16 raw bytes as the handshake key.
+
+**What remains.** The 6000 gate is a symmetric AES-128-ECB challenge-response
+keyed by `pd`, and it yields the key that also decrypts the media. To get a
+picture from Home Assistant on any boot:
+
+1. Obtain `pd` for the active pairing (re-pair with a QR whose payload is
+   photographed, so `pd` is known), and capture one fresh handshake — giving a
+   matched (`pd`, live `op30`/`op31`, `op03`/`op02`, `op05`/`op22`) set.
+2. Derive the construction `op03/op02/op05 = f(pd, op30, op31)`. With ECB and a
+   known key and transcript, this is a small search; the recurring session-secret
+   block (in `op22` and the tail of `op03`) is the likely media key or its seed.
+3. Implement it: open 6000, read the live challenge, compute the responses with
+   `pd`, send each frame with a correct CRC (`init=0x1234`), echo `op2d`
+   keepalives, keep the 8684 registration alive, pull `rtsp://<cam>/av2_0`
+   (User-Agent `sky-light (ysp20200805)`), then **decrypt each media NAL** with
+   the session key (the `IV ‖ AES-CBC` scheme from `pkg/lan/media.go`).
+
+That is more than a plain RTSP pull — the slice payloads must be decrypted — but
+it needs no WebRTC, no cloud-MQTT signalling and no bridge re-packaging, and it
+**survives an offline boot**, which the app's P2P path does not. That offline
+capability, not simplicity, is the reason this path is worth finishing.
 
 ---
 

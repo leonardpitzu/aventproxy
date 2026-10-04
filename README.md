@@ -193,6 +193,20 @@ local but the picture behind it is not.
 
 #### The parent unit says all of this is possible
 
+> **Update (2026-10-04).** That capture has now been done — see
+> [PROTOCOL.md section 22](PROTOCOL.md#22-the-parent-units-local-video-path-rtsp).
+> The short version: the parent unit does **not** use the phone's Tuya P2P/WebRTC
+> protocol. It pulls **standard RTSP** (`rtsp://<cam>/av2_0`, 1080p H.264 + L16
+> audio) over TCP 554, but the video is **still AES-encrypted** — the slice
+> payloads are ciphertext, keyed by a bespoke handshake on TCP 6000 that also
+> acts as the access gate. (So [section 11.1](PROTOCOL.md#111-direct-rtsp-authentication-weeks-of-effort)'s
+> "video is encrypted" was right; only the transport is simpler than the P2P
+> path.) The two units are **not** paired for life: they re-pair via a QR code
+> the camera scans, so the 6000 secret (`pd`, 16 bytes) is provisioned at
+> pairing, not fixed at manufacture. The value of this path is that it works
+> **offline**, not that it is unencrypted. The speculation below is kept for
+> context but is superseded by section 22.
+
 The camera ships with a portable display that talks to it directly, and joins
 the house wifi when a known network is in range. On that display: motion and
 sound alerts, lullaby and night light control, privacy mode, temperature and a
