@@ -15,10 +15,11 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import PhilipsAventAPI, TuyaAPIError, is_auth_error
-from .const import DPS_ALARM_RECORD, DPS_LULLABY_CONTROL, DPS_LULLABY_STATE
+from .const import DPS_ALARM_RECORD, DPS_BREATHING, DPS_LULLABY_CONTROL, DPS_LULLABY_STATE
 from .events import LULLABY_SETTLE_SECONDS, cloud_poll_needed, lullaby_state_settled
 from .lan import TuyaLANClient
 from .payload import dps_delta, truncated_dps
+from .senseiq import BREATHING_FRESH_SECONDS, BreathingReading, has_senseiq, parse_breathing
 
 LULLABY_STATE_MAP = {"play": "playing", "stop": "stopping"}
 
@@ -69,6 +70,16 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_lullaby: str | None = None
         self._pending_lullaby_since: float | None = None
         self._lullaby_unsub = None
+        # The last SenseIQ breathing reading pushed over the LAN and when, on the
+        # monotonic clock. Kept apart from `data` so a cloud poll cannot hand
+        # back a stale copy as if the camera had just sent it.
+        self.breathing: BreathingReading | None = None
+        self.breathing_at: float | None = None
+        self._breathing_unsub = None
+
+    @property
+    def has_senseiq(self) -> bool:
+        return has_senseiq(self.device_info.get("schema"))
 
     async def start_lan(self) -> None:
         if not self._local_key:
@@ -87,6 +98,9 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def stop_lan(self) -> None:
         self._cancel_pending_lullaby()
+        if self._breathing_unsub:
+            self._breathing_unsub()
+            self._breathing_unsub = None
         if self._lan_client:
             await self._lan_client.stop()
             self._lan_client = None
@@ -118,6 +132,8 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not baseline:
             self.last_lan_dps = dict(dps)
             self.lan_update_sequence += 1
+            if DPS_BREATHING in dps:
+                self._record_breathing(dps[DPS_BREATHING])
         _LOGGER.debug(
             "LAN %s for %s: %s",
             "baseline" if baseline else "push",
@@ -128,6 +144,27 @@ class PhilipsAventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         dps = self._hold_lullaby_state(dps)
         merged = {**self.data, **dps}
         self.async_set_updated_data(merged)
+
+    @callback
+    def _record_breathing(self, raw: Any) -> None:
+        """Keep a breathing push, and look again once it has gone stale.
+
+        The camera stops sending when the baby is lifted out, so nothing else
+        would tell the entities the crib is empty.
+        """
+        reading = parse_breathing(raw)
+        if reading is None:
+            return
+        self.breathing = reading
+        self.breathing_at = time.monotonic()
+        if self._breathing_unsub:
+            self._breathing_unsub()
+        self._breathing_unsub = async_call_later(self.hass, BREATHING_FRESH_SECONDS, self._breathing_expired)
+
+    @callback
+    def _breathing_expired(self, _now=None) -> None:
+        self._breathing_unsub = None
+        self.async_update_listeners()
 
     @callback
     def _hold_lullaby_state(self, dps: dict[str, Any]) -> dict[str, Any]:

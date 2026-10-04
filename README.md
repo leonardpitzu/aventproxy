@@ -26,6 +26,16 @@ Video and control run **over the local network**, with the Tuya cloud used only 
 | Motion detected | `binary_sensor` | Turns on for ~30 s when the monitor reports motion |
 | Sound detected | `binary_sensor` | Turns on for ~30 s when the monitor reports sound |
 | Privacy mode | `switch` | Camera lens on/off |
+| SenseIQ | `sensor` + `binary_sensor` | Breathing rate, sleep stage, sleep time, in bed since, in bed, moving. SCD923 and SCD973 only, and only while SenseIQ is switched on in the app |
+
+SenseIQ is computed on the monitor and arrives over the LAN session only, so
+those entities go unavailable while it is down. They are created for a monitor
+whose device schema declares the SenseIQ data points; the SCD951 and SCD953 do
+not, and never get them. Breathing rate is measured only while the baby lies
+still, so the last measured value is held through movement and cleared once
+the crib is empty. Sleep time counts light and deep sleep, not the session
+length the monitor reports, which keeps running while the baby is awake or out
+of bed. None of this is a medical device; treat it as the app does.
 
 Multiple monitors on one account are supported: the bridge serves each camera from the same port on its own RTSP path, derived from the camera's name.
 
@@ -122,6 +132,7 @@ live monitor, not inferred from the protocol.
 | Temperature | yes | **yes** | DPS `207` is in the monitor's LAN key set: read once when the session comes up, then pushed on change |
 | Motion detected | yes, via the poll | **yes**, verified | DPS `212` pushes on a session from 3.4 up. Three alarms in a row arrived in 0.2 to 2.4 s, none needed the poll |
 | Sound detected | yes, via the poll | **yes**, verified | Same key, `cmd: ipc_bang`, pushed within a second. `250` and `141` stayed empty throughout on this monitor |
+| SenseIQ | no | **yes**, verified | DPS `3` and `4` push only over the LAN. The cloud copy of `3` is an empty string |
 
 **Controls** — every write goes out on the LAN, and reaches for the cloud only
 when there is no LAN session to carry it
@@ -442,6 +453,30 @@ client.set_dps("YOUR_DEVICE_ID", {"201": "play"})   # play lullaby
 | 246 | `play_state` | Current state | enum | rw | `playing`, `stopping` |
 | 248 | `play_current` | Currently playing | string | rw | JSON: `{"bizcode":"phi-no-bm","id":3542155,"errcode":0}` |
 | 249 | `voice_upgrade` | Custom recording update | string | rw | - |
+
+#### SenseIQ and Cry Translation
+
+SCD923 and SCD973 only. Named by the device schema; payloads measured on an
+SCD973/26 (issue #74).
+
+| ID | Code | Name | Type | Mode | Values/Range |
+|----|------|------|------|------|-------------|
+| 1 | `sleepiq_switch` | SenseIQ on/off | bool | rw | true/false |
+| 3 | `sleepiq_status` | Breathing reading | string | ro | `{"r":"b","br":21}`: `r` is `b` still, `m` moving (`br` 0), `o` out of bed; `br` breaths/min. Pushed every 1-15 s while the baby is in the zone, then stops |
+| 4 | `sleep_session_data` | Sleep session | raw | ro | base64 of hex of JSON, about once a minute: `st` start (epoch s), `sd` length (s), `css` current stage, `cssd` its length (s), `ssd` finished stages `[{"l":231},...]`. Stages `a` awake, `l` light, `d` deep, `o` out of bed, `i` settling (the first few minutes, later filed as `o`) |
+| 5 | `sleepiq_consent` | SenseIQ consent | bool | rw | true/false |
+| 6 | `senseiq_diagnostics` | SenseIQ diagnostics | raw | ro | - |
+| 7 | `sensiq_diag_consent` | SenseIQ diagnostics consent | bool | rw | true/false |
+| 8 | `awake_delay` | Baby awake alert delay (s) | value | rw | 0-3600 |
+| 10 | `sleepiq_area` | SenseIQ zone | string | rw | JSON, as `169` |
+| 11 | `awake_switch` | Baby awake alert on/off | bool | rw | true/false |
+| 13 | `no_senseiq_switch` | No SenseIQ signal alert on/off | bool | rw | true/false |
+| 15 | `no_senseiq_signal` | No SenseIQ signal | bool | ro | true/false |
+| 2 | `cry_trans_switch` | Cry translation on/off | bool | rw | true/false |
+| 9 | `cry_trans_result` | Cry translation result | enum | ro | `0`-`8` |
+| 12 | `cry_det_switch` | Cry alert on/off | bool | rw | true/false |
+| 14 | `cry_trans_subscr` | Cry translation subscription | string | rw | - |
+| 17 | `cry_trans_token` | Cry translation token | raw | rw | - |
 
 #### Temperature Sensor
 

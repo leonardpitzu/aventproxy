@@ -25,6 +25,7 @@ from .const import (
 from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator
 from .entity import build_device_info
 from .events import is_new_event, motion_event_timestamp, sound_event_timestamp
+from .senseiq import BreathingReading, occupied_reading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ async def async_setup_entry(
                 AventSoundDetected(coordinator, cam_id),
             ]
         )
+        if coordinator.has_senseiq:
+            entities.extend([AventInBed(coordinator, cam_id), AventMoving(coordinator, cam_id)])
     async_add_entities(entities)
 
 
@@ -187,3 +190,49 @@ class AventSoundDetected(AventAlertBinarySensor):
 
     def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str):
         super().__init__(coordinator, cam_id, "sound_detected")
+
+
+class AventSenseIQBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Presence from the SenseIQ breathing pushes, which stop when the crib empties."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str, unique_suffix: str):
+        super().__init__(coordinator)
+        self._cam_id = cam_id
+        self._attr_unique_id = f"{cam_id}_{unique_suffix}"
+        self._attr_device_info = build_device_info(coordinator, cam_id)
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.coordinator.lan_connected
+
+    def _reading(self) -> BreathingReading | None:
+        return occupied_reading(self.coordinator.breathing, self.coordinator.breathing_at, time.monotonic())
+
+
+class AventInBed(AventSenseIQBinarySensor):
+    _attr_name = "In Bed"
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
+
+    def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str):
+        super().__init__(coordinator, cam_id, "in_bed")
+
+    @property
+    def is_on(self) -> bool:
+        return self._reading() is not None
+
+
+class AventMoving(AventSenseIQBinarySensor):
+    """Live movement in the crib, without the latch the motion alert has."""
+
+    _attr_name = "Moving"
+    _attr_device_class = BinarySensorDeviceClass.MOVING
+
+    def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str):
+        super().__init__(coordinator, cam_id, "moving")
+
+    @property
+    def is_on(self) -> bool:
+        reading = self._reading()
+        return reading is not None and reading.moving

@@ -74,6 +74,25 @@
     "sensor": {
       "temperature": {
         "name": "Temperature"
+      },
+      "breathing_rate": {
+        "name": "Breathing Rate"
+      },
+      "sleep_stage": {
+        "name": "Sleep Stage",
+        "state": {
+          "awake": "Awake",
+          "light": "Light sleep",
+          "deep": "Deep sleep",
+          "out": "Out of bed",
+          "settling": "Settling"
+        }
+      },
+      "sleep_time": {
+        "name": "Sleep Time"
+      },
+      "in_bed_since": {
+        "name": "In Bed Since"
       }
     },
     "switch": {
@@ -135,6 +154,12 @@
       },
       "sound_detected": {
         "name": "Sound Detected"
+      },
+      "in_bed": {
+        "name": "In Bed"
+      },
+      "moving": {
+        "name": "Moving"
       }
     },
     "camera": {

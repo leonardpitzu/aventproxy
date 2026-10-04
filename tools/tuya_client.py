@@ -160,6 +160,17 @@ class TuyaClient:
         cipher = PKCS1_v1_5.new(rsa_key)
         return cipher.encrypt(md5_pass.encode()).hex()
 
+    def _auth_material(self, email: str, password: str, country_code: str, refresh: bool) -> tuple[str, str]:
+        """(rsa_token, encrypted_password), reusing one SINGLE-USE token across the
+        login -> mfa-send -> login sequence. A fresh token per step invalidates the
+        emailed MFA code, so login() and trigger_mfa() must share the same one."""
+        cache = getattr(self, "_auth_cache", None)
+        if refresh or not cache or cache[0] != email:
+            token_data = self._get_rsa_token(email, country_code)
+            encrypted = self._encrypt_password(password, token_data["pbKey"])
+            self._auth_cache = (email, token_data["token"], encrypted)
+        return self._auth_cache[1], self._auth_cache[2]
+
     def login(self, email: str, password: str, country_code: str = "39", mfa_code: str = "") -> str:
         """
         Login with email + password + MFA.
@@ -170,9 +181,8 @@ class TuyaClient:
 
         Returns the SID on success.
         """
-        token_data = self._get_rsa_token(email, country_code)
-        encrypted = self._encrypt_password(password, token_data["pbKey"])
-
+        # fresh token when starting the flow (mfa_code=""), reuse it for the code retry
+        token, encrypted = self._auth_material(email, password, country_code, refresh=(mfa_code == ""))
         old_sid = self.sid
         self.sid = ""  # login calls don't use SID
         try:
@@ -183,7 +193,7 @@ class TuyaClient:
                     "countryCode": country_code,
                     "email": email,
                     "passwd": encrypted,
-                    "token": token_data["token"],
+                    "token": token,
                     "ifencrypt": 1,
                     "options": json.dumps({"group": 1, "mfaCode": mfa_code}),
                 },
@@ -196,9 +206,8 @@ class TuyaClient:
 
     def trigger_mfa(self, email: str, password: str, country_code: str = "39") -> dict:
         """Request a MFA code to be sent to the user's email."""
-        token_data = self._get_rsa_token(email, country_code)
-        encrypted = self._encrypt_password(password, token_data["pbKey"])
-
+        # reuse the token from the initial login() so the emailed code stays valid
+        token, encrypted = self._auth_material(email, password, country_code, refresh=False)
         old_sid = self.sid
         self.sid = ""
         try:
@@ -209,7 +218,7 @@ class TuyaClient:
                     "countryCode": country_code,
                     "username": email,
                     "passwd": encrypted,
-                    "token": token_data["token"],
+                    "token": token,
                     "ifencrypt": 1,
                     "options": json.dumps({"group": 1, "mfaCode": "null"}),
                 },

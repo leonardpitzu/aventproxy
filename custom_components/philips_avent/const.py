@@ -77,6 +77,11 @@ DPS_DECIBEL_EVENT = "141"
 # key it was once taken for (issues #61, #42). See events.py for the payload.
 # One slot holding the newest alarm, not a queue.
 DPS_ALARM_RECORD = "212"
+# SenseIQ (issue #74), named by the device schema as `sleepiq_status` and
+# `sleep_session_data`. Computed on the camera and pushed over the LAN while it
+# is switched on in the app. See senseiq.py for both payloads.
+DPS_BREATHING = "3"
+DPS_SLEEP_SESSION = "4"
 
 LULLABY_TRACK_MAP = {
     3542154: ("Baa Baa Black Sheep", "lullabies"),
