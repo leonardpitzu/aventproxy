@@ -193,19 +193,24 @@ local but the picture behind it is not.
 
 #### The parent unit says all of this is possible
 
-> **Update (2026-10-04).** That capture has now been done — see
-> [PROTOCOL.md section 22](PROTOCOL.md#22-the-parent-units-local-video-path-rtsp).
+> **Update (2026-10-05).** The capture has now been done and fully decrypted —
+> see [The parent-unit path (offline RTSP)](#the-parent-unit-path-offline-rtsp--researched-blocked-on-firmware)
+> below and [PROTOCOL.md section 22](PROTOCOL.md#22-the-parent-units-local-video-path-rtsp).
 > The short version: the parent unit does **not** use the phone's Tuya P2P/WebRTC
-> protocol. It pulls **standard RTSP** (`rtsp://<cam>/av2_0`, 1080p H.264 + L16
-> audio) over TCP 554, but the video is **still AES-encrypted** — the slice
-> payloads are ciphertext, keyed by a bespoke handshake on TCP 6000 that also
-> acts as the access gate. (So [section 11.1](PROTOCOL.md#111-direct-rtsp-authentication-weeks-of-effort)'s
-> "video is encrypted" was right; only the transport is simpler than the P2P
-> path.) The two units are **not** paired for life: they re-pair via a QR code
-> the camera scans, so the 6000 secret (`pd`, 16 bytes) is provisioned at
-> pairing, not fixed at manufacture. The value of this path is that it works
-> **offline**, not that it is unencrypted. The speculation below is kept for
-> context but is superseded by section 22.
+> protocol. The camera serves **standard RTSP** (`rtsp://<cam>/av2_0`, 1080p H.264 +
+> L16 audio) over TCP 554 and the parent unit pulls it. Control (RTSP + SDP) is
+> plaintext, but the **media is AES-encrypted** — the H.264 slice payloads are
+> ciphertext, gated by a bespoke handshake on TCP 6000. (So
+> [section 11.1](PROTOCOL.md#111-direct-rtsp-authentication-weeks-of-effort)'s
+> "video is encrypted" was right.) The units re-pair via a QR code, but contrary
+> to the earlier guess the QR secret `pd` turned out to key **nothing** we can
+> reach: it is **not** the SoftAP Wi-Fi password and **not** the 6000/media AES
+> key (proven exhaustively), and neither is the Tuya `localKey`. The media key is
+> a **static constant inside the camera/parent-unit firmware**, so this path is
+> fully mapped but blocked without a firmware dump. Its value is that it works
+> **offline**. The speculation below is kept for context but is superseded — in
+> particular its "paired for life / written at manufacture" and
+> "readable with the `localKey`" guesses are now disproven.
 
 The camera ships with a portable display that talks to it directly, and joins
 the house wifi when a known network is in range. On that display: motion and
@@ -717,6 +722,96 @@ WebRTC negotiated and refuses a stream claiming more, so it showed a black
 window while Chrome and Edge decoded the same bytes without complaint. The
 level is recomputed from the picture and rewritten in the parameter sets as
 they pass. It is only ever lowered, and nothing else is touched.
+
+### The parent-unit path (offline RTSP) — researched, blocked on firmware
+
+The local WebRTC path above still needs the monitor to have reached the Tuya
+cloud once since boot. The dedicated **parent unit** has no such dependency — it
+shows video with the camera on a network with no internet at all (confirmed on a
+hotel Wi-Fi). That makes its protocol the obvious candidate for truly
+offline-capable video, so it was reverse-engineered end to end. The conclusion
+is that it is **fully mapped but unusable without the camera firmware**: the
+media is encrypted with a key that only exists inside the devices. This section
+records what it is, so nobody has to rediscover it.
+
+**How it was captured.** A Raspberry Pi 4 with the nexmon monitor-mode firmware
+(Kali's `firmware-nexmon` + `brcmfmac-nexmon-dkms`) captured a full re-pair plus
+streaming session on 2.4 GHz channel 11. The pairing moment runs on the camera's
+own SoftAP, but immediately afterwards the camera and parent unit run the **same
+6000 + RTSP session over the home Wi-Fi**, so the whole exchange was recovered by
+decrypting that Wi-Fi with its WPA2 passphrase (`airdecap-ng`) — no device had to
+be opened.
+
+**Roles and ports.** The **camera is the server**, the **parent unit is the
+client** (it opens all three connections and pulls the stream):
+
+| Port | Role |
+|---|---|
+| UDP 6100 | Parent unit probes for the camera's SoftAP (`phi_<token><camMAC>`); falls through to Wi-Fi |
+| TCP 8684 | Registration / time-sync keepalive, `55aa 7e7f` framing, ~5 s |
+| TCP 6000 | Binary auth handshake, `55aa 7e7f` framing, AES-ECB bodies — the gate for 554 |
+| TCP 554 | Standard RTSP (`rtsp://<cam>/av2_0`), plaintext control, **encrypted media** |
+
+**The pairing QR.** Re-pairing is a button combo on the parent unit: it shows a
+QR on its screen (over the live crib feed) and the camera reads it with its lens.
+The payload is custom JSON, **not** a standard Wi-Fi QR:
+
+```json
+{"dev":"pu", "si":"phi_C01004FDBAF3", "pd":"qI5K3j4FiGKFJYLYG1x4xA==", "ver":"001"}
+```
+
+- `dev` — the device showing it (`pu`).
+- `si` — the direct-link SoftAP SSID. Its middle token rotates every pairing
+  (`C01742` → `C01004` → …); only the trailing `FDBAF3` (a device MAC tail) is stable.
+- `pd` — base64 of **16 random bytes**, fresh every re-pair. The only secret in the QR.
+- `ver` — payload format version (`001`).
+
+**The 6000 handshake** (`55 aa 7e 7f | crc16(2, LE) | len(2, LE, total) | op(1) |
+flag(1) | seq(1) | body`): the checksum is CRC-16/CCITT, poly `0x1021`,
+**init `0x1234`**, no reflection, over the bytes from the length field onward.
+Bodies are 16-byte-aligned AES-ECB blocks (`op2d` repeats identical ciphertext,
+which is the ECB signature). Two values travel in the clear: `op01` carries a
+16-byte **session token** plus the ASCII version `"0110"`, and `op30` carries a
+16-byte value that reappears verbatim as the RTSP `NO2:` header (base64). `op03`
+is a larger blob that is **byte-identical from both sides** — a shared secret
+under ECB.
+
+**RTSP is plaintext; the media is not.** `OPTIONS` / `DESCRIBE` / `SETUP` ×2 /
+`PLAY`, User-Agent `sky-light (ysp20200805)`, the only auth being the `NO2:`
+header on `DESCRIBE`. The SDP is readable: H.264 `profile-level-id=4D0033` with
+`sprop-parameter-sets`, plus `L16/16000` audio. There is **no `a=aes-key`** (the
+cloud path has one; this path does not). Media returns as RTSP-interleaved RTP.
+The RTP/NAL **framing is plaintext** — RTP headers, FU-A fragmentation, and the
+PPS (`28ee3c80`, matching the SDP) are all intact — but the **H.264 slice RBSP is
+AES-ECB-encrypted**. This was proven on a cleanly decrypted capture: a
+reassembled IDR slice has entropy 7.984 bits/byte with **zero** `00 00 03`
+emulation-prevention bytes in 11 KB (real H.264 would have several); the in-band
+SPS is `27` (plaintext NAL header) + 16 varying bytes + an **identical ciphertext
+tail every time** (constant plaintext → constant ciphertext under ECB); and
+ffmpeg decodes only grey frames. Audio was not separately confirmed (RF capture
+gaps) but uses the same scheme, so assume it is encrypted too.
+
+**What was ruled out.** Every secret obtainable without a firmware dump was
+tested against the SoftAP WPA2 PSK, the 6000 handshake, and the media, in all
+standard modes and derivations:
+
+- **`pd` is not the SoftAP Wi-Fi password.** The SoftAP is WPA2-PSK-CCMP; 827
+  structured derivations of `pd` (base64 string, hex, raw bytes, substrings,
+  SSID/token-mixed; PBKDF2 iters 1 and 4096; direct-PMK via MD5/SHA/HMAC) plus
+  `aircrack-ng` all fail against a matched-session handshake. The PSK is a fixed
+  firmware constant both units share.
+- **`pd`, the Tuya `localKey`, the `op01` token and the `NO2`/`op30` value are
+  none of them the media/6000 AES key** — not directly, nor via any MD5/SHA/XOR
+  combination, in AES-ECB or CBC-with-IV-prefix.
+
+**Conclusion.** The parent-unit path is genuinely offline-capable and completely
+characterised, but viewing it needs the media/6000 AES key, which is a **static
+constant baked into the camera/parent-unit firmware** (the `ysp` / sky-light ODM
+module — not the phone app, which uses the cloud WebRTC path). The only unlocks
+left are a **UART/SPI firmware dump** (deterministic) or an **OTA version-spoof**
+to obtain a firmware image (risky on a live baby monitor). Until then, offline
+video stays on the cloud-at-boot WebRTC path above. Full working notes are in
+[PROTOCOL.md](PROTOCOL.md).
 
 ### Credentials
 
