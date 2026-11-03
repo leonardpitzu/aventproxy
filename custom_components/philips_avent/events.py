@@ -10,7 +10,8 @@ stayed off on several models while the Philips app got the notification (issues
   describing the snapshot it uploaded:
   `{"v":"4.0","cmd":"ipc_motion","alarm":true,"time":1783686591,"files":[...]}`
   (from the diagnostics on #61). A noise alert uses the same shape with
-  `cmd: ipc_bang` (from the diagnostics on #42).
+  `cmd: ipc_bang` (from the diagnostics on #42), and a SenseIQ alert with
+  `cmd: ipc_car`.
 
 Which of the two applies is not a property of the model. DPS 212 was taken for
 an SCD951-and-SCD953 trait until an SCD973/26 was watched through a run of
@@ -52,8 +53,14 @@ MOTION_COMMANDS = frozenset({"ipc_motion", "ipc_move", "motion"})
 # the Philips app notified. A cry is a sound alert on a baby monitor, so
 # `ipc_cry` belongs here too.
 SOUND_COMMANDS = frozenset({"ipc_bang", "ipc_cry", "ipc_sound", "ipc_decibel", "sound", "decibel"})
+# Alerts SenseIQ raises, on the SCD923 and SCD973. `ipc_car` was posted to DPS
+# 212 by an SCD973/26 while SenseIQ was on (2026-10-05) and stays there as the
+# last record after SenseIQ is switched off. The SenseIQ entities already report
+# what it watches (presence, movement, breathing), so it is known but drives
+# neither the motion nor the sound sensor.
+SENSEIQ_COMMANDS = frozenset({"ipc_car"})
 
-KNOWN_COMMANDS = MOTION_COMMANDS | SOUND_COMMANDS
+KNOWN_COMMANDS = MOTION_COMMANDS | SOUND_COMMANDS | SENSEIQ_COMMANDS
 
 # Alarm commands already reported, so an unmapped one is logged once per run
 # instead of on every poll.

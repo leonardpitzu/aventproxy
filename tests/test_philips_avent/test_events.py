@@ -193,6 +193,21 @@ class TestUnmappedCommands:
     def test_known_vocabulary_is_the_union(self):
         assert "ipc_bang" in KNOWN_COMMANDS
         assert "ipc_motion" in KNOWN_COMMANDS
+        assert "ipc_car" in KNOWN_COMMANDS
+
+    def test_senseiq_alert_is_known_but_fires_neither_sensor(self, caplog):
+        # The record an SCD973/26 left in DPS 212 after SenseIQ was switched off
+        # (2026-10-05), minus the snapshot. It was logged as unknown on every start.
+        import logging
+
+        from philips_avent import events
+
+        record = {"v": "4.0", "cmd": "ipc_car", "type": "image", "alarm": True, "time": 1791165330}
+        events._seen_unknown_commands.clear()
+        with caplog.at_level(logging.WARNING):
+            assert motion_event_timestamp(encoded(record)) is None
+            assert sound_event_timestamp(encoded(record)) is None
+        assert not caplog.records
 
     def test_unmapped_command_is_logged_once(self, caplog):
         import logging

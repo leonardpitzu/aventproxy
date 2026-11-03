@@ -855,7 +855,7 @@ Controlled testing with motion and sound detection revealed the event DPS codes:
 |-----|-------|---------|
 | 250 | `"motion_detection"` | Motion detected by camera |
 | 141 | `"decibel_upload"` | Sound detected above threshold |
-| 212 | base64 JSON alarm record | Motion (`ipc_motion`) or sound (`ipc_bang`), with a timestamp and the snapshot the camera uploaded |
+| 212 | base64 JSON alarm record | Motion (`ipc_motion`), sound (`ipc_bang`) or a SenseIQ alert (`ipc_car`, SCD923/SCD973), with a timestamp and the snapshot the camera uploaded |
 
 **Later correction (measured 2026-08-11, SCD973/26 on a 3.5 session).** Which of
 these carries an alert is firmware-dependent and cannot be predicted from the
