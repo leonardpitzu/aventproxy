@@ -1,14 +1,12 @@
 package addon
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,14 +17,11 @@ import (
 	"avent-webrtc-bridge/pkg/utils"
 )
 
-// configPollInterval is how often the bridge notices that the integration has
-// rewritten its config. The file lives on the shared /config mount and is
-// replaced rather than edited, so a stat is enough and inotify would only add
-// a dependency.
-const configPollInterval = 5 * time.Second
-
-// BridgeConfig is the JSON shape written by the HA integration
-// in custom_components/philips_avent/__init__.py::_write_bridge_config.
+// BridgeConfig is the app's options: built by the HA integration in
+// custom_components/philips_avent/payload.py::build_bridge_config, set through
+// the Supervisor, and written by it to /data/options.json before each start.
+// A field added here also needs an entry in the app's config.yaml schema, or
+// the Supervisor drops it.
 type BridgeConfig struct {
 	SigningKey  string   `json:"signing_key"`
 	SID         string   `json:"sid"`
@@ -194,15 +189,15 @@ func SetStorageManager(sm *storage.StorageManager) {
 func NewAddonCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "addon",
-		Short: "Run the multi-camera bridge driven by the HA integration JSON",
-		Long: `Read the bridge config JSON written by the Philips Avent HA integration
-and serve every camera under it from one RTSP server, each on its own path.
+		Short: "Run the multi-camera bridge configured by the HA integration",
+		Long: `Read the options the Philips Avent HA integration set for this app and
+serve every camera in them from one RTSP server, each on its own path.
 
 Example:
-  avent-webrtc-bridge addon --config /config/philips_avent_bridge_<entry_id>.json`,
+  avent-webrtc-bridge addon --config /data/options.json`,
 		RunE: runAddon,
 	}
-	cmd.Flags().String("config", "", "Path to the bridge config JSON written by the HA integration")
+	cmd.Flags().String("config", "", "Path to the app's options JSON")
 	cmd.MarkFlagRequired("config")
 	return cmd
 }
@@ -213,24 +208,25 @@ func runAddon(cmd *cobra.Command, args []string) error {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	for {
-		restart, err := serveOnce(cfgPath, sig)
-		if err != nil || !restart {
-			return err
-		}
-		core.Logger.Info().Msg("Bridge config changed, restarting the stream server")
-	}
-}
-
-// serveOnce serves every camera in the config until a shutdown signal arrives
-// or the config file changes, and reports whether the caller should start over.
-func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
-		return false, err
+		return err
 	}
+	if len(cfg.Cameras) == 0 {
+		// A fresh install has no options yet. Exiting would only have run.sh
+		// start the bridge again every few seconds; the integration restarts
+		// the app once it has set them.
+		core.Logger.Info().Msg("No cameras configured yet, waiting for the Philips Avent integration to set this app's options")
+		<-sig
+		return nil
+	}
+	return serve(cfgPath, cfg, sig)
+}
+
+// serve runs every camera in the config until a shutdown signal arrives.
+func serve(cfgPath string, cfg BridgeConfig, sig <-chan os.Signal) error {
 	if err := validateConfig(cfg); err != nil {
-		return false, fmt.Errorf("invalid config %s: %w", cfgPath, err)
+		return fmt.Errorf("invalid config %s: %w", cfgPath, err)
 	}
 
 	port := cfg.BridgePort
@@ -257,7 +253,7 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 
 	identity := addonIdentity(cfg, userInfo)
 	if identity == "" {
-		return false, fmt.Errorf("no cloud session and no uid in the config: nothing names this account")
+		return fmt.Errorf("no cloud session and no uid in the config: nothing names this account")
 	}
 	userKey := "addon_" + strings.ReplaceAll(strings.ReplaceAll(identity, "@", "_at_"), ".", "_")
 
@@ -278,7 +274,7 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 
 	camsWithPath := assignPaths(cfg.Cameras)
 	if len(camsWithPath) == 0 {
-		return false, fmt.Errorf("no valid cameras after filtering, refusing to start")
+		return fmt.Errorf("no valid cameras after filtering, refusing to start")
 	}
 
 	infos := make([]storage.CameraInfo, 0, len(camsWithPath))
@@ -305,7 +301,7 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 	}
 
 	if cloudErr != nil && localCapable == 0 {
-		return false, fmt.Errorf("no cloud session and no camera has a local key and password: nothing can be served")
+		return fmt.Errorf("no cloud session and no camera has a local key and password: nothing can be served")
 	}
 	if err := storageManager.UpdateCamerasForUser(userKey, infos); err != nil {
 		core.Logger.Warn().Msgf("Could not save cameras: %v", err)
@@ -320,7 +316,7 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 		core.Logger.Info().Msg("Two-way audio enabled: streams will ask the camera for talkback")
 	}
 	if err := server.Start(); err != nil {
-		return false, fmt.Errorf("start RTSP server: %w", err)
+		return fmt.Errorf("start RTSP server: %w", err)
 	}
 	paths := "local network first, cloud fallback"
 	if cloudErr != nil {
@@ -329,53 +325,9 @@ func serveOnce(cfgPath string, sig <-chan os.Signal) (bool, error) {
 	core.Logger.Info().Msgf("Serving %d cameras on port %d, %d of them locally (%s): %s",
 		len(infos), port, localCapable, paths, strings.Join(pathLog, " "))
 
-	watchCtx, stopWatch := context.WithCancel(context.Background())
-	defer stopWatch()
-
-	var restart bool
-	select {
-	case <-sig:
-	case <-watchConfigFile(watchCtx, cfgPath):
-		restart = true
-	}
+	<-sig
 
 	core.Logger.Info().Msg("Shutting down...")
 	server.Stop()
-	return restart, nil
-}
-
-// watchConfigFile closes the returned channel once the config file on disk is
-// no longer the one that was loaded.
-func watchConfigFile(ctx context.Context, path string) <-chan struct{} {
-	changed := make(chan struct{})
-
-	go func() {
-		defer close(changed)
-
-		loaded, err := os.Stat(path)
-		if err != nil {
-			<-ctx.Done()
-			return
-		}
-
-		ticker := time.NewTicker(configPollInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				now, err := os.Stat(path)
-				if err != nil {
-					continue
-				}
-				if !now.ModTime().Equal(loaded.ModTime()) || now.Size() != loaded.Size() {
-					return
-				}
-			}
-		}
-	}()
-
-	return changed
+	return nil
 }

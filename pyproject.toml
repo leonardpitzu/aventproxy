@@ -9,6 +9,7 @@ test = [
     "aiohttp",
     "voluptuous",
     "cryptography",
+    "pyyaml",
 ]
 lint = ["ruff==0.16.2"]
 

@@ -32,7 +32,7 @@ avent-webrtc-bridge direct \
 
 The stream is then available at `rtsp://localhost:38554/MyCamera`.
 
-You don't normally run this manually. The HA add-on reads credentials from `philips_avent_bridge.json` (written by the HA integration) and starts the bridge automatically.
+You don't normally run this manually. In the Home Assistant app the bridge runs `addon --config /data/options.json`, with the options the HA integration set through the Supervisor.
 
 ## Key differences from upstream
 

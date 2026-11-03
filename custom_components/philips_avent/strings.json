@@ -167,5 +167,11 @@
         "name": "Camera"
       }
     }
+  },
+  "issues": {
+    "bridge_app_missing": {
+      "title": "Install the Philips Avent WebRTC Bridge app",
+      "description": "Camera video needs the Philips Avent WebRTC Bridge app, and it is not installed. Select **Learn more** to add its repository and open the app, then install and start it. The integration sets the app's options itself, so there is nothing to configure there."
+    }
   }
 }

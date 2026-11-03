@@ -321,7 +321,9 @@ Both halves are required: the integration talks to the monitor, the add-on serve
 3. Install **Philips Avent WebRTC Bridge**.
 4. Start it.
 
-Keep the add-on and the integration on the same version. They talk over a config file whose fields grow with each release, so an older bridge can silently miss one it needs.
+There is nothing to configure in the add-on. The integration sets its options through the Supervisor (session, camera keys, port) and restarts it when they change. If the add-on is missing, the integration raises a repair issue that links to it.
+
+Keep the add-on and the integration on the same version. The add-on's options grow with each release, and the Supervisor drops any the installed add-on does not declare.
 
 ### Manual
 
@@ -341,7 +343,7 @@ The country matters. A Philips/Tuya account lives in one regional data centre an
 
 | Option | Default | Purpose |
 |---|---|---|
-| Bridge host | `localhost` | Where the bridge runs. Only change it if you host the bridge yourself, outside the add-on |
+| Bridge host | `localhost` | Where the bridge runs. Only change it if you host the bridge yourself, outside the add-on. The integration configures the add-on only while this is `localhost`; a bridge elsewhere is configured by hand |
 | Bridge port | `38554` | RTSP port the bridge listens on |
 | Two-way audio | off | Ask the camera for talkback. Leave it off unless a client really speaks back: requesting audio makes the monitor restart a playing lullaby |
 
@@ -386,7 +388,7 @@ The integration speaks the same Tuya Mobile SDK API as the official app, includi
 |  |  Integration           |<-+--->  (setup only:
 |  |  entities, DPS, login  |  |       login, keys)
 |  +------------------------+  |
-|              | config file   |
+|              | add-on options|
 |              v               |
 |  +------------------------+  |      Monitor
 |  |  Bridge add-on         |<-+--->  LAN 6667/6668

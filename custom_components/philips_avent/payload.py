@@ -6,32 +6,27 @@ loaded by tests without dragging in the full HA stack.
 
 from __future__ import annotations
 
-BRIDGE_CONFIG_PREFIX = "philips_avent_bridge_"
-BRIDGE_CONFIG_SUFFIX = ".json"
+# Hosts that mean "the bridge app next to Home Assistant". Only that bridge is
+# configured by the integration; one anywhere else is the user's own process.
+LOCAL_BRIDGE_HOSTS = frozenset({"", "localhost", "127.0.0.1", "::1"})
 
 
-def bridge_config_filename(entry_id: str) -> str:
-    """Name of the bridge config file for a config entry."""
-    return f"{BRIDGE_CONFIG_PREFIX}{entry_id}{BRIDGE_CONFIG_SUFFIX}"
+def bridge_runs_as_app(bridge_host: str | None) -> bool:
+    """Whether the integration should configure the bridge app."""
+    return (bridge_host or "").strip().lower() in LOCAL_BRIDGE_HOSTS
 
 
-def orphan_bridge_configs(filenames: list[str], valid_entry_ids: set[str]) -> list[str]:
-    """Pick the bridge config files whose config entry is gone.
+def bridge_app_action(current: dict, desired: dict, *, running: bool) -> str | None:
+    """What the bridge app needs once its options are set to `desired`.
 
-    Deleting and re-adding the integration mints a new entry id, so the old
-    file stays in the Home Assistant config directory. The add-on then has two
-    to choose from and can keep streaming the credentials and camera id of the
-    entry that no longer exists (issue #52). Anything that is not named after a
-    live entry is dead weight.
+    None when they already match: a restart drops every open stream, so a Home
+    Assistant start or an integration reload must not cause one (issue #73).
+    Otherwise "restart" so a running app reads its new options, or "start" if
+    it was stopped.
     """
-    orphans = []
-    for name in filenames:
-        if not name.startswith(BRIDGE_CONFIG_PREFIX) or not name.endswith(BRIDGE_CONFIG_SUFFIX):
-            continue
-        entry_id = name[len(BRIDGE_CONFIG_PREFIX) : -len(BRIDGE_CONFIG_SUFFIX)]
-        if entry_id and entry_id not in valid_entry_ids:
-            orphans.append(name)
-    return orphans
+    if current == desired:
+        return None
+    return "restart" if running else "start"
 
 
 DELTA_VALUE_MAX_CHARS = 300
@@ -89,9 +84,11 @@ def build_bridge_config(
     uid: str = "",
     talkback: bool = False,
 ) -> dict:
-    """Build the bridge JSON the add-on reads.
+    """Build the bridge app's options.
 
-    Mirrors ``BridgeConfig`` in ``cmd/addon/addon.go``. `api_host` carries the
+    Mirrors ``BridgeConfig`` in ``cmd/addon/addon.go``, and every key must also be
+    in the app's ``config.yaml`` schema: the Supervisor drops options it has no
+    schema entry for. `api_host` carries the
     data center the account was logged into, because a Tuya session is rejected
     by any other host (issues #44, #58). `talkback` asks the camera for two-way
     audio, which the monitor answers by stopping a playing lullaby, so it

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, Platform
@@ -14,8 +12,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 
 from .api import PhilipsAventAPI
+from .bridge_app import async_configure_bridge_app, async_reset_bridge_app
 from .const import (
     CONF_API_HOST,
+    CONF_BRIDGE_HOST,
     CONF_BRIDGE_PORT,
     CONF_COUNTRY_CODE,
     CONF_DEVICE_ID,
@@ -24,16 +24,16 @@ from .const import (
     CONF_SID,
     CONF_TALKBACK,
     CONF_UID,
+    DEFAULT_BRIDGE_HOST,
     DEFAULT_BRIDGE_PORT,
     DEFAULT_TALKBACK,
-    DOMAIN,
     TUYA_APP_KEY,
     TUYA_DEFAULT_COUNTRY_CODE,
     TUYA_PACKAGE_NAME,
     TUYA_SIGNING_KEY,
 )
 from .coordinator import PhilipsAventConfigEntry, PhilipsAventCoordinator, PhilipsAventData
-from .payload import BRIDGE_CONFIG_PREFIX, bridge_config_filename, build_bridge_config, orphan_bridge_configs
+from .payload import bridge_runs_as_app, build_bridge_config
 from .region import DEFAULT_DATA_CENTER, api_host, api_url_for_host
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def _persist_lan_secrets(hass: HomeAssistant, entry: ConfigEntry, cameras: list)
     """Keep the LAN credentials on the entry so a restart needs no cloud call.
 
     Only writes when something actually changed: rewriting the entry on every
-    start would also rewrite the bridge config and restart the add-on (issue #73).
+    start would also change the bridge app's options and restart it (issue #73).
     """
     stored = entry.data.get("cameras", [])
     if not stored:
@@ -106,10 +106,15 @@ async def _lan_password(api: PhilipsAventAPI, cam_id: str) -> str:
     return config.get("password") or ""
 
 
-async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cameras: list) -> None:
-    """Write bridge config JSON for the add-on."""
-    bridge_port = entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT)
-    bridge_config = build_bridge_config(
+async def _configure_bridge(hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cameras: list) -> None:
+    """Hand the bridge app this entry's session and camera credentials.
+
+    A bridge on another host is configured by whoever runs it, so only the app
+    next to Home Assistant is touched.
+    """
+    if not bridge_runs_as_app(entry.options.get(CONF_BRIDGE_HOST, DEFAULT_BRIDGE_HOST)):
+        return
+    options = build_bridge_config(
         signing_key=TUYA_SIGNING_KEY,
         sid=entry.data[CONF_SID],
         ecode=entry.data.get(CONF_ECODE, ""),
@@ -120,55 +125,10 @@ async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: Phi
         api_host=_entry_api_host(entry),
         uid=entry.data.get(CONF_UID, ""),
         talkback=entry.options.get(CONF_TALKBACK, DEFAULT_TALKBACK),
-        bridge_port=bridge_port,
+        bridge_port=entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT),
         cameras=cameras,
     )
-    bridge_path = Path(hass.config.path(bridge_config_filename(entry.entry_id)))
-    await hass.async_add_executor_job(bridge_path.write_text, json.dumps(bridge_config, indent=2))
-    _LOGGER.info(
-        "Bridge config written to %s (port: %d, api host: %s)",
-        bridge_path,
-        bridge_port,
-        bridge_config["api_host"],
-    )
-
-    legacy_path = Path(hass.config.path("philips_avent_bridge.json"))
-    if await hass.async_add_executor_job(legacy_path.exists):
-        await hass.async_add_executor_job(legacy_path.unlink)
-        _LOGGER.info("Removed legacy bridge config %s", legacy_path)
-
-    await _remove_orphan_bridge_configs(hass)
-
-
-async def _remove_orphan_bridge_configs(hass: HomeAssistant) -> None:
-    """Delete bridge config files belonging to entries that no longer exist.
-
-    Re-adding the integration mints a new entry id, so the previous file stayed
-    behind and the add-on could keep reading it: old session, old camera id, and
-    a Tuya "No access" on every stream attempt (issue #52). Reinstalling made it
-    worse, since each attempt left one more file.
-    """
-    config_dir = Path(hass.config.path())
-    valid = {entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)}
-
-    def _prune() -> list[str]:
-        names = [p.name for p in config_dir.glob(f"{BRIDGE_CONFIG_PREFIX}*.json")]
-        removed = []
-        for name in orphan_bridge_configs(names, valid):
-            try:
-                (config_dir / name).unlink()
-            except OSError as err:
-                _LOGGER.warning("Could not remove stale bridge config %s: %s", name, err)
-            else:
-                removed.append(name)
-        return removed
-
-    removed = await hass.async_add_executor_job(_prune)
-    for name in removed:
-        _LOGGER.info(
-            "Removed stale bridge config %s, it belonged to a config entry that no longer exists",
-            name,
-        )
+    await async_configure_bridge_app(hass, options)
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -300,7 +260,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
 
     entry.runtime_data = PhilipsAventData(api=api, coordinators=coordinators)
 
-    await _write_bridge_config(hass, entry, api, cameras)
+    await _configure_bridge(hass, entry, api, cameras)
 
     async def _publish_lan_addresses(_now) -> None:
         """Hand the bridge the address the LAN listener resolved.
@@ -318,7 +278,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
                 changed = True
         if changed:
             _persist_lan_secrets(hass, entry, cameras)
-            await _write_bridge_config(hass, entry, api, cameras)
+            await _configure_bridge(hass, entry, api, cameras)
 
     entry.async_on_unload(async_call_later(hass, LAN_ADDRESS_SETTLE, _publish_lan_addresses))
 
@@ -340,22 +300,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Delete this entry's bridge config when the integration is removed.
+    """Take this entry's credentials back out of the bridge app.
 
-    Without this the file survived the removal, and the add-on could pick it
-    over the file of whatever entry the user created next (issue #52).
+    Left in place, the app would keep streaming with a session and camera ids
+    that no longer belong to any entry (issue #52).
     """
-    bridge_path = Path(hass.config.path(bridge_config_filename(entry.entry_id)))
-
-    def _unlink() -> bool:
-        try:
-            bridge_path.unlink()
-        except FileNotFoundError:
-            return False
-        except OSError as err:
-            _LOGGER.warning("Could not remove bridge config %s: %s", bridge_path, err)
-            return False
-        return True
-
-    if await hass.async_add_executor_job(_unlink):
-        _LOGGER.info("Removed bridge config %s", bridge_path)
+    await async_reset_bridge_app(hass)

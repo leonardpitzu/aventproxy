@@ -1,6 +1,6 @@
 name: "Philips Avent WebRTC Bridge"
 description: "Streams Philips Avent baby monitors over RTSP, from the local network where possible and the cloud otherwise."
-version: "2.5.1"
+version: "2.6.0"
 slug: "aventproxy_bridge"
 url: "https://github.com/leonardpitzu/aventproxy"
 arch:
@@ -10,29 +10,30 @@ homeassistant: "2025.2.0"
 stage: stable
 host_network: true
 apparmor: true
+startup: "application"
+boot: "auto"
+# Set by the Philips Avent integration through the Supervisor, not by hand
+# (see DOCS.md). Every key the integration sends must be listed here: the
+# Supervisor drops options it has no schema entry for. Secrets are `password`
+# so the Configuration tab masks them.
 options:
   cameras: []
 schema:
-  signing_key: str?
-  sid: str?
-  ecode: str?
+  signing_key: password?
+  sid: password?
+  ecode: password?
   partner: str?
-  app_key: str?
+  app_key: password?
   device_id: str?
   package_name: str?
   api_host: str?
-  talkback: bool?
   uid: str?
+  talkback: bool?
+  bridge_port: port?
   cameras:
     - camera_id: str?
       camera_name: str?
       product_id: str?
-      local_key: str?
-      password: str?
+      local_key: password?
+      password: password?
       lan_ip: str?
-startup: "application"
-boot: "auto"
-environment:
-  WAIT_FOR_CONFIG: "true"
-map:
-  - config:rw

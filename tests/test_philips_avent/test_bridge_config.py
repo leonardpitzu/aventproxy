@@ -10,16 +10,20 @@ tests stay free of a ``homeassistant`` dependency.
 """
 
 import json
+from pathlib import Path
 from typing import ClassVar
 
+import yaml
 from philips_avent.payload import (
-    bridge_config_filename,
+    bridge_app_action,
+    bridge_runs_as_app,
     build_bridge_config,
     build_cameras_payload,
     dps_delta,
-    orphan_bridge_configs,
     truncated_dps,
 )
+
+APP_CONFIG = Path(__file__).parents[2] / "aventproxy-bridge-addon" / "config.yaml"
 
 
 class TestBuildCamerasPayloadShape:
@@ -153,50 +157,72 @@ class TestBuildBridgeConfig:
         assert json.loads(json.dumps(build_bridge_config(**self.BASE))) == build_bridge_config(**self.BASE)
 
 
-class TestOrphanBridgeConfigs:
-    """Leftover per-entry config files (issue #52).
+class TestAppSchema:
+    """The options the integration sets against the app's ``config.yaml``.
 
-    Deleting and re-adding the integration mints a new entry id, so the old file
-    stayed in the config directory. The add-on then had two to choose from and
-    could keep using the dead entry's session and camera id, which Tuya answers
-    with "No access".
+    The Supervisor drops any option its schema does not list, and stores what is
+    left. A missing key is therefore lost (a custom port silently became the
+    default), and the stored options never equal what the integration sends, so
+    every Home Assistant start would restart the app.
     """
 
-    LIVE = "01ABCLIVEENTRY"
-    DEAD = "01XYZDEADENTRY"
+    BASE: ClassVar[dict] = TestBuildBridgeConfig.BASE
+    SECRETS: ClassVar[set] = {"signing_key", "sid", "ecode", "app_key"}
+    CAMERA_SECRETS: ClassVar[set] = {"local_key", "password"}
 
-    def test_filename_is_named_after_the_entry(self):
-        assert bridge_config_filename(self.LIVE) == f"philips_avent_bridge_{self.LIVE}.json"
+    @staticmethod
+    def schema() -> dict:
+        return yaml.safe_load(APP_CONFIG.read_text())["schema"]
 
-    def test_file_of_a_missing_entry_is_an_orphan(self):
-        names = [bridge_config_filename(self.LIVE), bridge_config_filename(self.DEAD)]
-        assert orphan_bridge_configs(names, {self.LIVE}) == [bridge_config_filename(self.DEAD)]
+    def test_every_option_is_in_the_schema(self):
+        assert set(build_bridge_config(**self.BASE)) == set(self.schema())
 
-    def test_live_entries_are_kept(self):
-        names = [bridge_config_filename(self.LIVE), bridge_config_filename(self.DEAD)]
-        assert orphan_bridge_configs(names, {self.LIVE, self.DEAD}) == []
+    def test_every_camera_field_is_in_the_schema(self):
+        camera = build_bridge_config(**self.BASE)["cameras"][0]
+        assert set(camera) == set(self.schema()["cameras"][0])
 
-    def test_multiple_accounts_keep_their_own_files(self):
-        second = "01SECONDACCOUNT"
-        names = [bridge_config_filename(x) for x in (self.LIVE, second, self.DEAD)]
-        assert orphan_bridge_configs(names, {self.LIVE, second}) == [bridge_config_filename(self.DEAD)]
+    def test_secrets_are_masked_in_the_configuration_tab(self):
+        schema = self.schema()
+        assert {key for key, kind in schema.items() if kind == "password?"} == self.SECRETS
+        camera = schema["cameras"][0]
+        assert {key for key, kind in camera.items() if kind == "password?"} == self.CAMERA_SECRETS
 
-    def test_unrelated_files_are_never_touched(self):
-        names = [
-            "philips_avent_bridge.json",  # the legacy single-entry file
-            "configuration.yaml",
-            "philips_avent_bridge_.json",  # no entry id in the name
-            "something_philips_avent_bridge_x.json",
-            bridge_config_filename(self.DEAD),
-        ]
-        assert orphan_bridge_configs(names, {self.LIVE}) == [bridge_config_filename(self.DEAD)]
+    def test_app_maps_no_host_folders(self):
+        assert "map" not in yaml.safe_load(APP_CONFIG.read_text())
 
-    def test_no_entries_at_all_means_every_file_is_an_orphan(self):
-        names = [bridge_config_filename(self.LIVE), bridge_config_filename(self.DEAD)]
-        assert sorted(orphan_bridge_configs(names, set())) == sorted(names)
 
-    def test_empty_directory(self):
-        assert orphan_bridge_configs([], {self.LIVE}) == []
+class TestBridgeAppAction:
+    """A restart drops every stream, so it happens only when the options changed (issue #73)."""
+
+    OPTIONS: ClassVar[dict] = build_bridge_config(**TestBuildBridgeConfig.BASE)
+
+    def test_unchanged_options_leave_the_app_alone(self):
+        assert bridge_app_action(dict(self.OPTIONS), self.OPTIONS, running=True) is None
+        assert bridge_app_action(dict(self.OPTIONS), self.OPTIONS, running=False) is None
+
+    def test_changed_options_restart_a_running_app(self):
+        assert bridge_app_action({"cameras": []}, self.OPTIONS, running=True) == "restart"
+
+    def test_changed_options_start_a_stopped_app(self):
+        assert bridge_app_action({"cameras": []}, self.OPTIONS, running=False) == "start"
+
+    def test_a_new_lan_address_counts_as_a_change(self):
+        moved = json.loads(json.dumps(self.OPTIONS))
+        moved["cameras"][0]["lan_ip"] = "192.168.1.15"
+        assert bridge_app_action(self.OPTIONS, moved, running=True) == "restart"
+
+
+class TestBridgeRunsAsApp:
+    def test_default_host_is_the_app(self):
+        assert bridge_runs_as_app("localhost")
+        assert bridge_runs_as_app(" LocalHost ")
+        assert bridge_runs_as_app("127.0.0.1")
+        assert bridge_runs_as_app("")
+        assert bridge_runs_as_app(None)
+
+    def test_another_host_is_configured_by_hand(self):
+        assert not bridge_runs_as_app("192.168.1.20")
+        assert not bridge_runs_as_app("bridge.lan")
 
 
 class TestDpsDelta:
