@@ -1,9 +1,9 @@
 {
   "domain": "philips_avent",
   "name": "Philips Avent Baby Monitor",
+  "after_dependencies": ["hassio"],
   "codeowners": ["@leonardpitzu"],
   "config_flow": true,
-  "after_dependencies": ["hassio"],
   "dependencies": ["ffmpeg"],
   "documentation": "https://github.com/leonardpitzu/aventproxy",
   "iot_class": "local_push",
