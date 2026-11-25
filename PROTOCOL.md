@@ -1851,6 +1851,50 @@ it needs no WebRTC, no cloud-MQTT signalling and no bridge re-packaging, and it
 **survives an offline boot**, which the app's P2P path does not. That offline
 capability, not simplicity, is the reason this path is worth finishing.
 
+#### 22.1 The SCD973 dialect and the version trailer
+
+The SCD973 runs a newer firmware (`"ver":"001"` in the QR) that adds a
+challenge-response to the 6000 login the SCD923/26 does not have. This was filed
+as issue #1 on `H3adsho0ot/philips-avent-scd923-26-local-protocol`, and the
+maintainer is collaborating from the firmware side.
+
+A metadata-only diagnostic (one connect, one login, then receive only) run
+against the live camera shows that the **login trailer selects the camera's
+path**:
+
+- `0\0` (legacy trailer): the camera sends `0x8001` first (a 24-byte body =
+  8-byte status plus a verbatim 16-byte echo of the wrapped login block), then
+  `0x092d` keepalives and periodic `0x0930`/`0x0931` pairs. Device info
+  (`0x8002`) never follows (waited 25 s).
+- `0010\0` (the parent unit's v001 trailer): no `0x8001` at all. The camera goes
+  straight into the challenge stream, `0x0930` then `0x0931`, re-emitted about
+  every 1.5 s interleaved with `0x092d`, clearly waiting for a computed response.
+
+So `0010` acts as a protocol-version selector: it suppresses the legacy
+login-ack and puts the camera directly into the challenge-response. The
+login-ack is a blind echo either way, so it never validates the key. (`op30`/
+`op31` in the choreography table are these same `0x0930`/`0x0931`, carried with
+`flag=0x09`.)
+
+Two earlier claims above are softened by the maintainer's firmware-side view and
+should be read with care:
+
+- `op01` was called a per-connection nonce. It may instead be
+  `Enc(pairingKey, sessionKey)`. The tests above only rule out the chain
+  `sk = decrypt(pd, op01[:16])` then `decrypt(sk, op03/op02)`; they do not rule
+  out `op01` being a wrapped session key.
+- `op03`/`op0e`/`op05` were read as challenge answers from their position after
+  the challenges. On the SCD923 those ops are stream-settings, talkback and a
+  router-info request, so the SCD973 may keep those roles and the answer role is
+  not established. The matched capture is what will settle it.
+
+Maintainer facts worth keeping: the SCD923 handheld app dispatches only
+`0x0901`..`0x0919` (no `0x0930`/`0x0931`, and no dormant v001 path found in it);
+their block cipher accepts any 16-byte key, so the base64 `pd` does not imply a
+different cipher; on the SCD923 ports 6000 and 8684 share one session key, and
+the 8684 heartbeat reply carries an extra 16-byte field that is constant within
+a session (meaning unknown).
+
 ---
 
 *This document describes research conducted on personally-owned devices for interoperability purposes. All credentials shown are anonymized or redacted. The Tuya trademark belongs to Tuya Inc.*
