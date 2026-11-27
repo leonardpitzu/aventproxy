@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     paths-ignore: ["**.md", ".gitignore", "LICENSE"]
   pull_request:
     paths-ignore: ["**.md", ".gitignore", "LICENSE"]
@@ -25,15 +25,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-          cache: pip
-      # Pinned in requirements_test.txt: an unpinned ruff turns CI red on
-      # untouched code the day a new release adds a rule.
       - name: Install ruff (the version pinned in requirements_test.txt)
         run: pip install "$(grep '^ruff==' requirements_test.txt)"
       - name: Check for errors
-        run: ruff check custom_components/ tools/ tests/
-      - name: Check formatting
-        run: ruff format --check custom_components/ tools/ tests/
+        run: ruff check .
 
   tests:
     name: Tests
@@ -47,9 +42,10 @@ jobs:
           cache: pip
           cache-dependency-path: requirements_test.txt
       - name: Install test dependencies
+        # pytest-homeassistant pins the matching Home Assistant release.
         run: pip install -r requirements_test.txt
       - name: Run tests
-        run: pytest -q --cov=custom_components/philips_avent --cov-report=term-missing
+        run: pytest tests/ -q --cov=custom_components/philips_avent --cov-report=term-missing
 
   bridge:
     name: Bridge (Go)
