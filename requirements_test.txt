@@ -1,4 +1,5 @@
-# Declared in manifest.json; bridge_app.py imports it at module level
+# bridge_app.py imports it; Home Assistant installs it from core's requirements.txt,
+# but pip install homeassistant (and so the test plugin) does not
 aiohasupervisor
 # The manifest depends on the ffmpeg and camera integrations, whose libraries the plugin does not ship
 ha-ffmpeg
