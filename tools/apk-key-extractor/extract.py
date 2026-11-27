@@ -119,7 +119,7 @@ def extract_embedded_key(apk_path, app_secret, pkg_name, cert_sha256):
         # Validate it's actually hex
         try:
             seed_bytes = bytes.fromhex(hex_seed.decode("ascii"))
-        except (ValueError, UnicodeDecodeError):
+        except ValueError, UnicodeDecodeError:
             return None, "cers format not recognized (seed not hex)"
 
         encrypted = decoded[comma_idx + 1 :]

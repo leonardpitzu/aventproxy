@@ -240,7 +240,7 @@ def iter_frames(stream):
 
 def session_key(local_key, local_nonce, remote_nonce, version):
     """Derive the 3.4/3.5 session key the way the Tuya SDK does."""
-    mixed = bytes(a ^ b for a, b in zip(local_nonce, remote_nonce))
+    mixed = bytes(a ^ b for a, b in zip(local_nonce, remote_nonce, strict=True))
     cipher = AESCipher(local_key)
     if version < 3.5:
         return cipher.encrypt(mixed, use_base64=False, pad=False)
@@ -327,7 +327,7 @@ def main():
         nonces = {}
         keys = [local_key]
         events = []
-        for ts, src, sport, dst, dport, buf in members:
+        for _ts, src, sport, dst, dport, buf in members:
             for _, frame, header in iter_frames(buf):
                 events.append((src, sport, dst, dport, frame, header))
 

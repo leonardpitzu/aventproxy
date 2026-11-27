@@ -86,7 +86,7 @@ class AventLullabySelect(CoordinatorEntity, SelectEntity):
             track_id = info.get("id")
             if track_id in LULLABY_TRACK_MAP:
                 return LULLABY_TRACK_MAP[track_id][0]
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             pass
         return None
 
@@ -157,10 +157,13 @@ class AventTimerSelect(CoordinatorEntity, SelectEntity):
         dps = self.coordinator.data
         if not dps:
             return None
-        switch_on = dps.get(self._dps_switch)
-        if not switch_on:
+        # A data point the camera did not report is unknown, not "Off" or "0 min".
+        if self._dps_switch not in dps:
+            return None
+        if not dps[self._dps_switch]:
             return "Off"
-        seconds = dps.get(self._dps_timer, 0)
+        if (seconds := dps.get(self._dps_timer)) is None:
+            return None
         return TIMER_SECONDS_TO_LABEL.get(seconds, f"{seconds // 60} min")
 
     async def async_select_option(self, option: str) -> None:

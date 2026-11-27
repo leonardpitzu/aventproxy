@@ -1,0 +1,11 @@
+# bridge_app.py imports it at module level; Home Assistant OS/Container ship it, the plugin does not
+aiohasupervisor
+# The manifest depends on the ffmpeg and camera integrations, whose libraries the plugin does not ship
+ha-ffmpeg
+PyTurboJPEG
+pytest-cov
+# Home Assistant core's own test plugin, versioned like Home Assistant: 2026.12.0 once released, its beta until then
+pytest-homeassistant>=2026.12.0b2,<=2026.12.0
+ruff==0.17.6
+# Declared in manifest.json; lan.py imports it at module level
+tinytuya>=1.15.0

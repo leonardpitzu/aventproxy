@@ -614,9 +614,9 @@ client.set_dps(cam_id, {"237": "0"})  # privacy off
 ```bash
 # Python integration
 python3 -m venv .venv && source .venv/bin/activate
-pip install --group test --group lint
+pip install -r requirements_test.txt
 pytest
-ruff check custom_components/ tools/ tests/
+ruff check custom_components/ tools/ tests/ && ruff format --check custom_components/ tools/ tests/
 
 # Go bridge
 cd aventproxy-bridge-addon/avent-webrtc-bridge

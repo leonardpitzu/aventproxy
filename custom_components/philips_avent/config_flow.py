@@ -6,7 +6,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-import voluptuous as vol
+import probatio as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_COUNTRY, CONF_EMAIL, CONF_PASSWORD
 from homeassistant.data_entry_flow import AbortFlow
@@ -357,8 +357,10 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 result = await self._async_complete_login(mfa_code)
 
-                # Update the config entry with new credentials
-                entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+                # A different Tuya account must not silently take over this entry.
+                entry = self._get_reauth_entry()
+                await self.async_set_unique_id(result["uid"])
+                self._abort_if_unique_id_mismatch()
                 data = {
                     **entry.data,
                     CONF_EMAIL: self._email,
@@ -369,9 +371,7 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     **self._region_data(),
                 }
                 data.pop(CONF_PASSWORD, None)
-                self.hass.config_entries.async_update_entry(entry, data=data)
-                await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                return self.async_update_reload_and_abort(entry, data=data)
 
             except AbortFlow:
                 raise
@@ -394,10 +394,10 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class PhilipsAventOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for Philips Avent."""
+class PhilipsAventOptionsFlowHandler(config_entries.OptionsFlowWithReload):
+    """Handle options flow for Philips Avent; a change reloads the entry."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)

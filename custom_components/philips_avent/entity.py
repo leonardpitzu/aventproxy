@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from homeassistant.helpers.device_registry import DeviceInfo
+
 from .const import DEFAULT_MODEL, DOMAIN, PRODUCT_ID_TO_MODEL
 
 
-def build_device_info(coordinator, cam_id: str) -> dict:
+def build_device_info(coordinator, cam_id: str) -> DeviceInfo:
     """Device registry info shared by every platform.
 
     The model falls back to a family-generic name because the Tuya productId
@@ -14,12 +16,12 @@ def build_device_info(coordinator, cam_id: str) -> dict:
     shows up in the device page and in diagnostics.
     """
     product_id = (coordinator.device_info or {}).get("productId") or ""
-    info = {
-        "identifiers": {(DOMAIN, cam_id)},
-        "name": coordinator.camera_name,
-        "manufacturer": "Philips",
-        "model": PRODUCT_ID_TO_MODEL.get(product_id, DEFAULT_MODEL),
-    }
-    if product_id:
-        info["model_id"] = product_id
-    return info
+    # Built in one call (DeviceInfo is a dataclass since Home Assistant 2026.12).
+    # model_id is only passed when known: None would clear the registry value.
+    return DeviceInfo(
+        identifiers={(DOMAIN, cam_id)},
+        name=coordinator.camera_name,
+        manufacturer="Philips",
+        model=PRODUCT_ID_TO_MODEL.get(product_id, DEFAULT_MODEL),
+        **({"model_id": product_id} if product_id else {}),
+    )

@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 
-from .api import PhilipsAventAPI
+from .api import PhilipsAventAPI, TuyaAPIError, is_auth_error
 from .bridge_app import async_configure_bridge_app, async_reset_bridge_app
 from .const import (
     CONF_API_HOST,
@@ -131,11 +133,6 @@ async def _configure_bridge(hass: HomeAssistant, entry: ConfigEntry, api: Philip
     await async_configure_bridge_app(hass, options)
 
 
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload integration when options change."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
 async def _setup_camera(
     hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cam: dict
 ) -> tuple[str, PhilipsAventCoordinator]:
@@ -228,7 +225,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
                 if patched:
                     updated_stored_cameras = [
                         {**stored_cam, "product_id": cam.get("productId", "")}
-                        for stored_cam, cam in zip(stored_cameras, cameras)
+                        for stored_cam, cam in zip(stored_cameras, cameras, strict=True)
                     ]
                     hass.config_entries.async_update_entry(
                         entry,
@@ -246,13 +243,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
         # Fallback: re-discover via API
         try:
             cameras = await api.discover_cameras()
-        except Exception:
-            _LOGGER.exception("Camera discovery failed")
-            cameras = []
+        except TuyaAPIError as err:
+            if is_auth_error(err):
+                raise ConfigEntryAuthFailed(f"Session expired during camera discovery: {err}") from err
+            raise ConfigEntryNotReady(f"Camera discovery failed: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise ConfigEntryNotReady(f"Camera discovery failed: {err!r}") from err
 
     if not cameras:
-        _LOGGER.error("No cameras found. Reconfigure the integration to re-discover.")
-        return False
+        raise ConfigEntryError("No cameras found on this account; remove and add the integration again to re-discover")
 
     coordinators = dict(await asyncio.gather(*(_setup_camera(hass, entry, api, cam) for cam in cameras)))
 
@@ -284,8 +283,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PhilipsAventConfigEntry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
-
+    # No update listener: the options flow reloads the entry itself, and the
+    # LAN addresses written back above must not restart every camera.
     return True
 
 

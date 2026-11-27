@@ -115,7 +115,7 @@ def parse_breathing(raw: Any) -> BreathingReading | None:
         return None
     try:
         rate = int(data["br"]) if data.get("br") is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         rate = None
     return BreathingReading(data["r"], rate)
 
@@ -143,7 +143,7 @@ def _decode_session(raw: Any) -> dict | None:
     try:
         text = base64.b64decode(raw, validate=True).decode("ascii")
         return _as_dict(bytes.fromhex(text).decode("utf-8"))
-    except (binascii.Error, ValueError, UnicodeDecodeError):
+    except binascii.Error, ValueError, UnicodeDecodeError:
         return None
 
 

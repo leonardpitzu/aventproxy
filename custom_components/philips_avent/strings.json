@@ -50,7 +50,8 @@
     },
     "abort": {
       "already_configured": "This account is already configured",
-      "reauth_successful": "Re-authentication successful"
+      "reauth_successful": "Re-authentication successful",
+      "unique_id_mismatch": "That is a different Philips Avent account; sign in with the account this entry was set up with"
     }
   },
   "options": {

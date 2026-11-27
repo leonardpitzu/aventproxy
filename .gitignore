@@ -26,3 +26,9 @@ captures/
 
 # Git worktrees
 .worktrees/
+
+# Agent memory (local only - never publish)
+AGENTS.md
+
+# Coverage data
+.coverage

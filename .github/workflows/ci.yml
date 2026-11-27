@@ -24,11 +24,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
-      # Pinned in pyproject: an unpinned ruff turns CI red on untouched code the
-      # day a new release adds a rule.
-      - run: pip install --group lint
+      # Pinned in requirements_test.txt: an unpinned ruff turns CI red on
+      # untouched code the day a new release adds a rule.
+      - name: Install ruff (the version pinned in requirements_test.txt)
+        run: pip install "$(grep '^ruff==' requirements_test.txt)"
       - name: Check for errors
         run: ruff check custom_components/ tools/ tests/
       - name: Check formatting
@@ -42,12 +43,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
+          cache-dependency-path: requirements_test.txt
       - name: Install test dependencies
-        run: pip install --group test
+        run: pip install -r requirements_test.txt
       - name: Run tests
-        run: pytest
+        run: pytest -q --cov=custom_components/philips_avent --cov-report=term-missing
 
   bridge:
     name: Bridge (Go)

@@ -20,6 +20,15 @@ REDACT_KEYS = {
     "local_key",
     "password",
     "email",
+    # Where the monitor and the household are: LAN and WAN addresses, the
+    # Tuya location fields and hardware ids.
+    "lan_ip",
+    "lanIp",
+    "ip",
+    "lat",
+    "lon",
+    "mac",
+    "uuid",
 }
 
 

@@ -82,12 +82,12 @@ def decode_event_payload(raw: object) -> dict | None:
     if not text.startswith("{"):
         try:
             text = base64.b64decode(text, validate=True).decode("utf-8")
-        except (binascii.Error, ValueError, UnicodeDecodeError):
+        except binascii.Error, ValueError, UnicodeDecodeError:
             return None
 
     try:
         payload = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -101,7 +101,7 @@ def event_timestamp(payload: dict | None) -> float | None:
         return None
     try:
         stamp = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     # Some firmwares report milliseconds.
     if stamp > 1e11:

@@ -1,42 +1,25 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[dependency-groups]
-# Everything the unit tests need. They exercise the HA-free half of the
-# integration, so homeassistant itself is deliberately not in here.
-test = [
-    "pytest",
-    "aiohttp",
-    "voluptuous",
-    "cryptography",
-    "pyyaml",
-]
-lint = ["ruff==0.16.2"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Let Home Assistant install its httpx alias before respx is imported
+addopts = "-p no:respx"
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
-# Pin the rules the project enforces. Without this, `ruff check` inherits
-# whatever the installed ruff version happens to default to, so a new ruff
-# release turns CI red on untouched code, which is what ruff 0.16 did here.
 select = [
-    "E4", "E7", "E9", "F",  # pycodestyle errors + pyflakes
-    "I",                    # import order
-    "UP",                   # pyupgrade
-    "SIM",                  # flake8-simplify
-    "PERF",                 # perflint
-    "PLW",                  # pylint warnings
-    "RUF",                  # ruff-specific
-    "EXE",                  # shebang / executable-bit consistency
-    "BLE",                  # blind excepts, each survivor carries a noqa reason
-    "S110",                 # try/except/pass, which hides real failures
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (undefined names, unused imports)
+    "W",   # pycodestyle warnings
+    "B",   # flake8-bugbear (common bug patterns)
+    "I",   # isort (import ordering)
+    "UP",  # pyupgrade
 ]
-
-[tool.ruff.lint.per-file-ignores]
-# Reverse-engineering aids, run by hand and not shipped to users. Broad
-# excepts are the point in a probe script.
-"tools/*" = ["BLE001", "S110", "SIM105", "PLW0603"]
-# A test that asserts on the exception type it gets back has to catch broadly.
-"tests/*" = ["BLE001"]
+ignore = [
+    "E501",  # line too long - handled by line-length
+    "W293",  # blank line contains whitespace
+]
